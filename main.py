@@ -1,8 +1,6 @@
 from rlgym.api import RLGym
-from rlgym.api import RLGym
 from rlgym.rocket_league.action_parsers import RepeatAction, LookupTableAction
-from rlgym.rocket_league.done_conditions import TimeoutCondition
-from rlgym.rocket_league.done_conditions.any_condition import AnyCondition
+from rlgym.rocket_league.done_conditions import TimeoutCondition, NoTouchTimeoutCondition
 from rlgym.rocket_league.done_conditions.goal_condition import GoalCondition
 from rlgym.rocket_league.game.game_engine import GameEngine
 from rlgym.rocket_league.obs_builders.default_obs import DefaultObs
@@ -14,15 +12,16 @@ from rlgym.rocket_league.state_mutators import MutatorSequence, KickoffMutator, 
 from rlgym_ppo import Learner
 from rlgym_ppo.util import RLGymV2GymWrapper
 
-from done_conditions import LoggedNoTouchTimeoutCondition, LoggedTimeoutCondition
+from done_conditions import LoggedAnyCondition
 from logger import Logger, BallHeightLogger
-from rewards import LoggerCombinedReward, ConstantReward
+from rewards import LoggerCombinedReward, ConstantReward, VelBallToGoalReward, VelocityReward, \
+    LiuDistancePlayerToBallReward
 
 TICK_RATE = 1. / 120.
 tick_skip = 8
 
-n_proc = 2
-ts_per_iteration = 10_000
+n_proc = 1
+ts_per_iteration = 100_000
 timestep_limit = ts_per_iteration * 100
 ppo_batch_size = ts_per_iteration
 n_epochs = 10
@@ -41,26 +40,34 @@ obs_builder = DefaultObs()
 reward_fn = LoggerCombinedReward(
     (
         GoalReward(),
-        2
+        100
     ),
     (
         TouchReward(),
-        0.1
+        20
     ),
-    # VelocityReward(),
-    ConstantReward(),
-    logger=Logger()
+
+    (
+        VelBallToGoalReward(),
+        2
+    ),
+    (
+        LiuDistancePlayerToBallReward(),
+        2
+    )
 )
 
-total_timeout = 50
-termination_conditions = AnyCondition(
+total_timeout = 3
+termination_conditions = LoggedAnyCondition(
     GoalCondition(),
-    TimeoutCondition(total_timeout)
+    TimeoutCondition(total_timeout / TICK_RATE),
+    name="Terminations"
 )
 
-no_touch_timeout = 500
-truncation_conditions = AnyCondition(
-    LoggedTimeoutCondition(no_touch_timeout)
+no_touch_timeout = 1
+truncation_conditions = LoggedAnyCondition(
+    NoTouchTimeoutCondition(no_touch_timeout / TICK_RATE),
+    name="Truncations"
 )
 
 simulator = True
@@ -91,7 +98,7 @@ if __name__ == "__main__":
     }
 
     logger = Logger()
-    logger.add_logger(BallHeightLogger())
+    logger.add_logger(BallHeightLogger())  # Doesn't work for now, but won't change anything
 
     agent = Learner(
         env_create_function=create_env,
@@ -112,7 +119,11 @@ if __name__ == "__main__":
         log_to_wandb=True,
         wandb_run_name=config['name'],
         wandb_group_name=config['entity'],
-        wandb_project_name=config['project']
+        wandb_project_name=config['project'],
+        render=rendered,
+        render_delay=(120/8) if rendered else 0,
+
+        device="cuda"
     )
 
     agent.learn()

@@ -3,12 +3,15 @@ from typing import List, Dict, Any, Union, Tuple
 import numpy as np
 from rlgym.api import RewardFunction, AgentID, StateType, RewardType
 from rlgym.rocket_league.api import GameState
+from rlgym.rocket_league.common_values import BLUE_TEAM, ORANGE_TEAM, ORANGE_GOAL_BACK, BLUE_GOAL_BACK, BALL_MAX_SPEED, \
+    CAR_MAX_SPEED, BALL_RADIUS
 
-from logger import Logger, _replace
+import math
+from logger import Logger, _add
 
 
 class LoggerCombinedReward(RewardFunction):
-    def __init__(self, *rewards_and_weights: Union[RewardFunction, Tuple[RewardFunction, float]], logger: Logger):
+    def __init__(self, *rewards_and_weights: Union[RewardFunction, Tuple[RewardFunction, float]]):
         reward_fns = []
         weights = []
 
@@ -22,8 +25,7 @@ class LoggerCombinedReward(RewardFunction):
 
         self.reward_fns = tuple(reward_fns)
         self.weights = tuple(weights)
-        self.logger = logger
-        self.n_steps = 0
+        self.logger = Logger()
 
         self.reward_logs = []
 
@@ -42,21 +44,25 @@ class LoggerCombinedReward(RewardFunction):
             for agent, reward in rewards.items():
                 combined_rewards[agent] += reward * weight
 
-        self.n_steps += len(agents)
-
         if any(is_truncated.values()) or any(is_terminated.values()):
             self.reward_logs = np.mean(self.reward_logs, axis=0)
             data = {"Rewards": {}}
             for i, reward_fn in enumerate(self.reward_fns):
-                data["Rewards"].setdefault(reward_fn.__class__.__name__, float(self.reward_logs[i]))
-            self.logger.add_result(data, _replace)
+                data["Rewards"].setdefault(reward_fn.__class__.__name__, {
+                    "value": float(self.reward_logs[i]),
+                    "nb_episodes": 1
+                })
+            self.logger.add_result(data, _add)
             self.reward_logs = []
-            self.n_steps = 0
 
         return combined_rewards
 
 
 class VelocityReward(RewardFunction):
+    def __init__(self, negative: bool = False):
+        super().__init__()
+        self.negative = negative
+
     def reset(self, initial_state: StateType, shared_info: Dict[str, Any]) -> None:
         pass
 
@@ -64,7 +70,7 @@ class VelocityReward(RewardFunction):
                     is_truncated: Dict[AgentID, bool], shared_info: Dict[str, Any]) -> Dict[AgentID, RewardType]:
         rewards = {agent: 0. for agent in agents}
         for agent, car in state.cars.items():
-            rewards[agent] = np.sum(car.physics.linear_velocity)
+            rewards[agent] = np.linalg.norm(car.physics.linear_velocity) / CAR_MAX_SPEED * (1 - 2 * self.negative)
 
         return rewards
 
@@ -76,3 +82,55 @@ class ConstantReward(RewardFunction):
     def get_rewards(self, agents: List[AgentID], state: StateType, is_terminated: Dict[AgentID, bool],
                     is_truncated: Dict[AgentID, bool], shared_info: Dict[str, Any]) -> Dict[AgentID, RewardType]:
         return {agent: 1 for agent in agents}
+
+
+class VelBallToGoalReward(RewardFunction):
+    def __init__(self, own_goal=False, use_scalar_projection=False):
+        super().__init__()
+        self.own_goal = own_goal
+        self.use_scalar_projection = use_scalar_projection
+
+    def reset(self, initial_state: StateType, shared_info: Dict[str, Any]) -> None:
+        pass
+
+    def get_rewards(self, agents: List[AgentID], state: StateType, is_terminated: Dict[AgentID, bool],
+                    is_truncated: Dict[AgentID, bool], shared_info: Dict[str, Any]) -> Dict[AgentID, RewardType]:
+        rewards = {agent: 0. for agent in agents}
+        for agent in agents:
+            player = state.cars[agent]
+
+            if player.team_num == BLUE_TEAM and not self.own_goal \
+                    or player.team_num == ORANGE_TEAM and self.own_goal:
+                objective = np.array(ORANGE_GOAL_BACK)
+            else:
+                objective = np.array(BLUE_GOAL_BACK)
+
+            vel = state.ball.linear_velocity
+            pos_diff = objective - state.ball.position
+            if self.use_scalar_projection:
+                # Vector version of v=d/t <=> t=d/v <=> 1/t=v/d
+                # Max value should be max_speed / ball_radius = 2300 / 94 = 24.5
+                # Used to guide the agent towards the ball
+                inv_t = math.scalar_projection(vel, pos_diff)
+                rewards[agent] = inv_t
+            else:
+                # Regular component velocity
+                norm_pos_diff = pos_diff / np.linalg.norm(pos_diff)
+                norm_vel = vel / BALL_MAX_SPEED
+                rewards[agent] = float(np.dot(norm_pos_diff, norm_vel))
+        return rewards
+
+
+class LiuDistancePlayerToBallReward(RewardFunction):
+
+    def reset(self, initial_state: StateType, shared_info: Dict[str, Any]) -> None:
+        pass
+
+    def get_rewards(self, agents: List[AgentID], state: StateType, is_terminated: Dict[AgentID, bool],
+                    is_truncated: Dict[AgentID, bool], shared_info: Dict[str, Any]) -> Dict[AgentID, RewardType]:
+        rewards = {agent: 0 for agent in agents}
+        for agent in agents:
+            dist = np.linalg.norm(state.cars[agent].physics.position - state.ball.position) - BALL_RADIUS
+            rewards[agent] = np.exp(-0.5 * dist / CAR_MAX_SPEED)  # Inspired by https://arxiv.org/abs/2105.12196
+
+        return rewards

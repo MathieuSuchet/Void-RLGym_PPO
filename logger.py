@@ -43,10 +43,7 @@ class Logger(MetricsLogger):
         self.file_path = "./logging/logging.json"
         if "logging" not in os.listdir():
             os.makedirs("logging")
-            _init_empty_file(self.file_path)
-        else:
-            if not os.path.exists(self.file_path):
-                _init_empty_file(self.file_path)
+        _init_empty_file(self.file_path)
         self.loggers = {}
 
     def add_logger(self, logger: MetricsLogger):
@@ -54,9 +51,10 @@ class Logger(MetricsLogger):
 
     def log(self, wandb_run: Run, step: int):
         data = self.get_results().copy()
+        self._compute_data(data)
+        self._print_data(data)
         new_data = {}
         self._format_to_wandb(data, new_data)
-        wandb_run.log(data=new_data, step=step)
 
     def _format_to_wandb(self, data: Dict[str, Any], new_data: Dict, trace: str = ""):
         for k, v in data.items():
@@ -79,10 +77,15 @@ class Logger(MetricsLogger):
     def _map_result(self, data: Dict[str, Any], in_file: Dict[str, Any], func: Callable[[Any, Any], Any]):
         for k, v in in_file.items():
             if isinstance(v, Dict):
+                if k not in data.keys():
+                    data.setdefault(k, {})
                 self._map_result(data[k], v, func)
             else:
-                if k in data.keys():
-                    data[k] = func(data[k], in_file[k])
+                if k in in_file.keys():
+                    if k in data.keys():
+                        data[k] = func(data[k], in_file[k])
+                    else:
+                        data.setdefault(k, in_file[k])
                 else:
                     data.setdefault(k, in_file[k])
 
@@ -105,3 +108,21 @@ class Logger(MetricsLogger):
             data.append(logger.collect_metrics(game_state))
 
         return np.array(data)
+
+    def _compute_data(self, data: Dict[str, Any]):
+        if "Rewards" in data.keys():
+            for r in data["Rewards"].keys():
+                rew = data["Rewards"][r]
+                result = rew["value"] / rew["nb_episodes"]
+                data["Rewards"][r] = result
+
+    def _print_data(self, data, space_len: int = 0):
+        for k, v in data.items():
+            if space_len == 0:
+                print("=" * 70)
+            print("--" * space_len, f" {k}:{'': <10}", end=" ")
+            if isinstance(v, Dict):
+                print()
+                self._print_data(v, space_len + 1)
+            else:
+                print(f"{v: >{20 + (len(max(data.keys(), key=lambda y: len(y))) - len(k))}.4f}")

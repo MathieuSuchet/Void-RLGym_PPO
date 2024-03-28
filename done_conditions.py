@@ -1,35 +1,30 @@
 from typing import List, Dict, Any
 
-from rlgym.api import AgentID, StateType
-from rlgym.rocket_league.done_conditions import TimeoutCondition
-from rlgym.rocket_league.done_conditions.no_touch_condition import NoTouchTimeoutCondition
+from rlgym.api import AgentID, StateType, DoneCondition
+from rlgym.rocket_league.done_conditions import AnyCondition
 
-from logger import Logger, _add
+from logger import Logger
 
 
-class LoggedNoTouchTimeoutCondition(NoTouchTimeoutCondition):
-    def __init__(self, timeout: float):
-        super().__init__(timeout)
+class LoggedAnyCondition(AnyCondition):
+    def __init__(self, *conditions: DoneCondition, name: str = "DoneCondition"):
+        super().__init__(*conditions)
         self.logger = Logger()
+        self.name = name
 
     def is_done(self, agents: List[AgentID], state: StateType, shared_info: Dict[str, Any]) -> Dict[AgentID, bool]:
-        result = super().is_done(agents, state, shared_info)
-        if any(result.values()):
+        data = {}
+        log = False
+        for c in self.conditions:
+
+            result = any(c.is_done(agents, state, shared_info).values())
+            if result:
+                print(c.__class__)
+            data.setdefault(c.__class__.__name__, int(result))
+            if result and not log:
+                log = True
+        if log:
             self.logger.add_result({"DoneConditions": {
-                "NoTouchTimeout": 1
-            }}, func_merge=_add)
-        return result
-
-
-class LoggedTimeoutCondition(TimeoutCondition):
-    def __init__(self, timeout: float):
-        super().__init__(timeout)
-        self.logger = Logger()
-
-    def is_done(self, agents: List[AgentID], state: StateType, shared_info: Dict[str, Any]) -> Dict[AgentID, bool]:
-        result = super().is_done(agents, state, shared_info)
-        if any(result.values()):
-            self.logger.add_result({"DoneConditions": {
-                "Timeout": 1
-            }}, func_merge=_add)
-        return result
+                self.name: data
+            }})
+        return super().is_done(agents, state, shared_info)
