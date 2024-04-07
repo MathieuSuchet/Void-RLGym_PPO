@@ -4,13 +4,25 @@ from typing import Dict, Any, Callable, List
 
 import filelock
 import numpy as np
+from rlgym.rocket_league.api import GameState
 from rlgym_ppo.util import MetricsLogger
-from rlgym_sim.utils.gamestates import GameState
 from wandb.sdk.wandb_run import Run
 
 
 def _add(x: Any, y: Any):
     return x + y
+
+
+def _minus(x: Any, y: Any):
+    return x - y
+
+
+def _times(x: Any, y: Any):
+    return x * y
+
+
+def _pow(x: Any, y: Any):
+    return pow(x, y)
 
 
 def _replace(x: Any, y: Any):
@@ -22,7 +34,13 @@ def _init_empty_file(filepath):
         json.dump({}, f)
 
 
-class BallHeightLogger(MetricsLogger):
+class WandbMetricsLogger(MetricsLogger):
+    @property
+    def metrics(self) -> List[str]:
+        return []
+
+
+class BallHeightLogger(WandbMetricsLogger):
     @property
     def metrics(self) -> List[str]:
         return ["stats/ball_height"]
@@ -30,31 +48,55 @@ class BallHeightLogger(MetricsLogger):
     def _collect_metrics(self, game_state: GameState) -> np.ndarray:
         return np.array([game_state.ball.position[2]])
 
-    def _report_metrics(self, collected_metrics, wandb_run, cumulative_timesteps):
-        wandb_run.log(
-            data={"stats/ball_height": np.mean(
-                np.nan_to_num(collected_metrics)
-            )},
-            step=cumulative_timesteps)
+
+class TouchLogger(WandbMetricsLogger):
+    @property
+    def metrics(self) -> List[str]:
+        return ["stats/touch_rate"]
+
+    def _collect_metrics(self, game_state: GameState) -> np.ndarray:
+        touch_rate = np.mean([car.ball_touches for car in game_state.cars.values()])
+        return np.array([touch_rate])
+
+
+class GoalLogger(WandbMetricsLogger):
+    @property
+    def metrics(self) -> List[str]:
+        return ["stats/goal_rate"]
+
+    def _collect_metrics(self, game_state: GameState) -> np.ndarray:
+        goal_rate = game_state.goal_scored
+        return np.array([goal_rate])
 
 
 class Logger(MetricsLogger):
-    def __init__(self):
+    def __init__(self, *loggers: WandbMetricsLogger):
         self.file_path = "./logging/logging.json"
         if "logging" not in os.listdir():
             os.makedirs("logging")
         _init_empty_file(self.file_path)
-        self.loggers = {}
+        self.loggers: Dict[WandbMetricsLogger, Any] = {logger: [] for logger in loggers}
 
-    def add_logger(self, logger: MetricsLogger):
-        self.loggers.setdefault(logger, [])
+    def add_logger(self, logger: WandbMetricsLogger):
+        if logger in self.loggers.keys():
+            print("Logger", logger.__class__.__name__, "already exists in the logger list")
+        else:
+            self.loggers.setdefault(logger, [])
 
-    def log(self, wandb_run: Run, step: int):
+    def log(self, metrics_data, wandb_run: Run, step: int):
         data = self.get_results().copy()
         self._compute_data(data)
         self._print_data(data)
         new_data = {}
+
         self._format_to_wandb(data, new_data)
+        self._handle_metrics(metrics_data, new_data)
+
+        wandb_run.log(new_data, step)
+
+        # Clear loggers to only register current rollout's metrics
+        for logger in self.loggers.keys():
+            self.loggers[logger].clear()
 
     def _format_to_wandb(self, data: Dict[str, Any], new_data: Dict, trace: str = ""):
         for k, v in data.items():
@@ -98,14 +140,14 @@ class Logger(MetricsLogger):
 
         self.save_results(data_cp)
 
-    def report_metrics(self, collected_metrics, wandb_run: Run, cumulative_timesteps):
-        self.log(wandb_run, cumulative_timesteps)
+    def _report_metrics(self, collected_metrics, wandb_run: Run, cumulative_timesteps):
+        self.log(collected_metrics, wandb_run, cumulative_timesteps)
         _init_empty_file(self.file_path)
 
-    def collect_metrics(self, game_state: GameState) -> np.ndarray:
+    def _collect_metrics(self, game_state: GameState) -> np.ndarray:
         data = []
         for logger in self.loggers.keys():
-            data.append(logger.collect_metrics(game_state))
+            data.extend(logger.collect_metrics(game_state))
 
         return np.array(data)
 
@@ -126,3 +168,24 @@ class Logger(MetricsLogger):
                 self._print_data(v, space_len + 1)
             else:
                 print(f"{v: >{20 + (len(max(data.keys(), key=lambda y: len(y))) - len(k))}.4f}")
+
+    def _handle_metrics(self, metrics_data, logging_data: Dict[str, Any]):
+        i = 0
+        metrics_start = []
+        metrics_end = []
+
+        metrics_data = np.array(metrics_data)
+        while i < metrics_data.shape[1]:
+            len_shape = int(metrics_data[0][i][0])
+            shape_metric = int(metrics_data[0][i + len_shape][0]) if len_shape > 0 else 1
+            metrics_start.append(i + len_shape + 1)
+            metrics_end.append(i + len_shape + shape_metric + 1)
+            i += len_shape + shape_metric + 1
+
+        for i, metrics_flags in enumerate(zip(metrics_start, metrics_end)):
+            start, end = metrics_flags
+            self.loggers[list(self.loggers.keys())[i]].append(np.mean(np.squeeze(metrics_data[:, start:end])))
+
+        for logger in self.loggers.keys():
+            for i, m in enumerate(logger.metrics):
+                logging_data.setdefault(m, self.loggers[logger][i])

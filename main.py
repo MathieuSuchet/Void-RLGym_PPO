@@ -4,24 +4,22 @@ from rlgym.rocket_league.done_conditions import TimeoutCondition, NoTouchTimeout
 from rlgym.rocket_league.done_conditions.goal_condition import GoalCondition
 from rlgym.rocket_league.game.game_engine import GameEngine
 from rlgym.rocket_league.obs_builders.default_obs import DefaultObs
-from rlgym.rocket_league.reward_functions.goal_reward import GoalReward
-from rlgym.rocket_league.reward_functions.touch_reward import TouchReward
 from rlgym.rocket_league.sim import RLViserRenderer
 from rlgym.rocket_league.sim.rocketsim_engine import RocketSimEngine
 from rlgym.rocket_league.state_mutators import MutatorSequence, KickoffMutator, FixedTeamSizeMutator
 from rlgym_ppo import Learner
 from rlgym_ppo.util import RLGymV2GymWrapper
 
+import wandb
 from done_conditions import LoggedAnyCondition
-from logger import Logger, BallHeightLogger
-from rewards import LoggerCombinedReward, ConstantReward, VelBallToGoalReward, VelocityReward, \
-    LiuDistancePlayerToBallReward
+from logger import Logger, BallHeightLogger, TouchLogger, GoalLogger
+from rewards import LoggerCombinedReward, VelBallToGoalReward, LiuDistancePlayerToBallReward, EventReward
 
 TICK_RATE = 1. / 120.
 tick_skip = 8
 
 n_proc = 1
-ts_per_iteration = 100_000
+ts_per_iteration = 10_000
 timestep_limit = ts_per_iteration * 100
 ppo_batch_size = ts_per_iteration
 n_epochs = 10
@@ -32,21 +30,15 @@ min_inference_size = max(1, int(round(n_proc * 0.9)))
 
 blue_count = orange_count = 3
 
-# wandb_run = wandb.init(entity="cryy_salt", name="Multi_logger_run", project="rlgym_ppo_tests")
-
 state_mutator = MutatorSequence(FixedTeamSizeMutator(blue_count, orange_count), KickoffMutator())
 action_parser = RepeatAction(LookupTableAction(), repeats=tick_skip)
 obs_builder = DefaultObs()
 reward_fn = LoggerCombinedReward(
-    (
-        GoalReward(),
-        100
+    EventReward(
+        goal_w=100,
+        concede_w=-100,
+        touch_w=10
     ),
-    (
-        TouchReward(),
-        20
-    ),
-
     (
         VelBallToGoalReward(),
         2
@@ -70,8 +62,9 @@ truncation_conditions = LoggedAnyCondition(
     name="Truncations"
 )
 
-simulator = True
-rendered = False
+simulator = True  # Since the plugin is not implemented, game engine is just empty (Leave it to True)
+rendered = False  # Make sure you got rlviser in the folder
+continue_run = False  # If you did a run already, and you are continuing (make sure to give the run's id)
 
 
 def create_env():
@@ -93,12 +86,28 @@ def create_env():
 if __name__ == "__main__":
     config = {
         "project": "rlgym_ppo_tests",
-        "entity": "cryy_salt",
+        "entity": "madaos",
         "name": "logger_run"
     }
 
-    logger = Logger()
-    logger.add_logger(BallHeightLogger())  # Doesn't work for now, but won't change anything
+    wandb_run = wandb.init(
+        name=config['name'],
+        entity=config['entity'],
+        project=config["project"]
+    )
+
+    if continue_run:
+        run_id = "id_to_continue"  # TODO: change the id to match the last wandb run's id
+        wandb_run = wandb.init(
+            entity=config["entity"],
+            name=config["name"],
+            project=config["project"],
+            resume=True,
+            id=run_id)
+    else:
+        wandb_run = None
+
+    logger = Logger(BallHeightLogger(), TouchLogger(), GoalLogger())
 
     agent = Learner(
         env_create_function=create_env,
@@ -116,12 +125,17 @@ if __name__ == "__main__":
         n_proc=n_proc,
         min_inference_size=min_inference_size,
         metrics_logger=logger,
+
         log_to_wandb=True,
         wandb_run_name=config['name'],
         wandb_group_name=config['entity'],
         wandb_project_name=config['project'],
+        load_wandb=continue_run,
+        wandb_run=wandb_run,
+
         render=rendered,
         render_delay=(120/8) if rendered else 0,
+
 
         device="cuda"
     )
