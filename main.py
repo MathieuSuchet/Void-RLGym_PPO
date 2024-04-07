@@ -12,8 +12,9 @@ from rlgym_ppo.util import RLGymV2GymWrapper
 
 import wandb
 from done_conditions import LoggedAnyCondition
-from logger import Logger, BallHeightLogger, TouchLogger, GoalLogger
+from logger import Logger
 from rewards import LoggerCombinedReward, VelBallToGoalReward, LiuDistancePlayerToBallReward, EventReward
+from wandb_loggers import BallVelocityLogger, BallHeightLogger, TouchLogger, GoalLogger, PlayerVelocityLogger
 
 TICK_RATE = 1. / 120.
 tick_skip = 8
@@ -90,12 +91,6 @@ if __name__ == "__main__":
         "name": "logger_run"
     }
 
-    wandb_run = wandb.init(
-        name=config['name'],
-        entity=config['entity'],
-        project=config["project"]
-    )
-
     if continue_run:
         run_id = "id_to_continue"  # TODO: change the id to match the last wandb run's id
         wandb_run = wandb.init(
@@ -107,7 +102,13 @@ if __name__ == "__main__":
     else:
         wandb_run = None
 
-    logger = Logger(BallHeightLogger(), TouchLogger(), GoalLogger())
+    logger = Logger(
+        BallHeightLogger(),
+        TouchLogger(),
+        GoalLogger(),
+        BallVelocityLogger(),
+        PlayerVelocityLogger()
+    )
 
     agent = Learner(
         env_create_function=create_env,

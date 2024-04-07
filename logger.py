@@ -1,12 +1,14 @@
 import json
 import os
-from typing import Dict, Any, Callable, List
+from typing import Dict, Any, Callable
 
 import filelock
 import numpy as np
 from rlgym.rocket_league.api import GameState
 from rlgym_ppo.util import MetricsLogger
 from wandb.sdk.wandb_run import Run
+
+from wandb_loggers import WandbMetricsLogger
 
 
 def _add(x: Any, y: Any):
@@ -32,41 +34,6 @@ def _replace(x: Any, y: Any):
 def _init_empty_file(filepath):
     with open(filepath, "w") as f:
         json.dump({}, f)
-
-
-class WandbMetricsLogger(MetricsLogger):
-    @property
-    def metrics(self) -> List[str]:
-        return []
-
-
-class BallHeightLogger(WandbMetricsLogger):
-    @property
-    def metrics(self) -> List[str]:
-        return ["stats/ball_height"]
-
-    def _collect_metrics(self, game_state: GameState) -> np.ndarray:
-        return np.array([game_state.ball.position[2]])
-
-
-class TouchLogger(WandbMetricsLogger):
-    @property
-    def metrics(self) -> List[str]:
-        return ["stats/touch_rate"]
-
-    def _collect_metrics(self, game_state: GameState) -> np.ndarray:
-        touch_rate = np.mean([car.ball_touches for car in game_state.cars.values()])
-        return np.array([touch_rate])
-
-
-class GoalLogger(WandbMetricsLogger):
-    @property
-    def metrics(self) -> List[str]:
-        return ["stats/goal_rate"]
-
-    def _collect_metrics(self, game_state: GameState) -> np.ndarray:
-        goal_rate = game_state.goal_scored
-        return np.array([goal_rate])
 
 
 class Logger(MetricsLogger):
@@ -147,9 +114,9 @@ class Logger(MetricsLogger):
     def _collect_metrics(self, game_state: GameState) -> np.ndarray:
         data = []
         for logger in self.loggers.keys():
-            data.extend(logger.collect_metrics(game_state))
+            data.append(logger.collect_metrics(game_state))
 
-        return np.array(data)
+        return data
 
     def _compute_data(self, data: Dict[str, Any]):
         if "Rewards" in data.keys():
@@ -174,17 +141,32 @@ class Logger(MetricsLogger):
         metrics_start = []
         metrics_end = []
 
-        metrics_data = np.array(metrics_data)
-        while i < metrics_data.shape[1]:
-            len_shape = int(metrics_data[0][i][0])
-            shape_metric = int(metrics_data[0][i + len_shape][0]) if len_shape > 0 else 1
-            metrics_start.append(i + len_shape + 1)
-            metrics_end.append(i + len_shape + shape_metric + 1)
-            i += len_shape + shape_metric + 1
+        for i, metric in enumerate(metrics_data[0]):
+            metric_len = 0
+            local_metric_start = []
+            local_metric_end = []
+            while metric_len < metric.shape[0]:
+                len_shape_metrics = int(metric[metric_len])
+                shape_metrics = metric[metric_len:metric_len + len_shape_metrics]
+
+                is_metric_atomic = len(shape_metrics) == 0
+
+                metric_len += len_shape_metrics
+                metric_len += 1 if is_metric_atomic else len(shape_metrics)
+
+                local_metric_start.append(metric_len)
+                local_metric_end.append(metric_len + (int(shape_metrics[0]) if not is_metric_atomic else 1))
+
+                metric_len += shape_metrics[0] if not is_metric_atomic else 1
+
+            metrics_start.append(local_metric_start)
+            metrics_end.append(local_metric_end)
 
         for i, metrics_flags in enumerate(zip(metrics_start, metrics_end)):
-            start, end = metrics_flags
-            self.loggers[list(self.loggers.keys())[i]].append(np.mean(np.squeeze(metrics_data[:, start:end])))
+            local_starts, local_ends = metrics_flags
+            for j in range(len(local_starts)):
+                start, end = local_starts[j], local_ends[j]
+                self.loggers[list(self.loggers.keys())[i]].append(np.mean([metric_data[i][start:end] for metric_data in metrics_data]))
 
         for logger in self.loggers.keys():
             for i, m in enumerate(logger.metrics):
