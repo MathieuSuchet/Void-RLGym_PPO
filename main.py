@@ -137,7 +137,6 @@ if __name__ == "__main__":
         render=rendered,
         render_delay=(120/8) if rendered else 0,
 
-
         device="cuda"
     )
 

@@ -57,7 +57,8 @@ class Logger(MetricsLogger):
         new_data = {}
 
         self._format_to_wandb(data, new_data)
-        self._handle_metrics(metrics_data, new_data)
+        unformat_metrics = self._handle_metrics(metrics_data, new_data)
+        self._print_data(unformat_metrics)
 
         wandb_run.log(new_data, step)
 
@@ -71,6 +72,22 @@ class Logger(MetricsLogger):
                 self._format_to_wandb(v, new_data, trace + k + "/")
             else:
                 new_data.setdefault(trace + k, v)
+
+    def format_from_wandb(self, key: str, value: Any) -> Dict[str, Any]:
+        all_attr = key.split("/")
+        data = {}
+        temp_ref = data
+
+        len_attrs = 0
+        while len_attrs < len(all_attr) - 1:
+            temp_ref.setdefault(all_attr[len_attrs], {})
+            temp_ref = temp_ref[all_attr[len_attrs]]
+            len_attrs += 1
+
+            if len_attrs == len(all_attr) - 1:
+                temp_ref[all_attr[-1]] = value
+
+        return data
 
     def save_results(self, data: Dict[str, Any]):
         with filelock.FileLock("logging/f_lock.lock"):
@@ -137,9 +154,10 @@ class Logger(MetricsLogger):
                 print(f"{v: >{20 + (len(max(data.keys(), key=lambda y: len(y))) - len(k))}.4f}")
 
     def _handle_metrics(self, metrics_data, logging_data: Dict[str, Any]):
-        i = 0
         metrics_start = []
         metrics_end = []
+
+        metrics_dict = {}
 
         for i, metric in enumerate(metrics_data[0]):
             metric_len = 0
@@ -166,8 +184,24 @@ class Logger(MetricsLogger):
             local_starts, local_ends = metrics_flags
             for j in range(len(local_starts)):
                 start, end = local_starts[j], local_ends[j]
-                self.loggers[list(self.loggers.keys())[i]].append(np.mean([metric_data[i][start:end] for metric_data in metrics_data]))
+                self.loggers[list(self.loggers.keys())[i]].append(
+                    np.mean([metric_data[i][start:end] for metric_data in metrics_data]))
 
         for logger in self.loggers.keys():
             for i, m in enumerate(logger.metrics):
                 logging_data.setdefault(m, self.loggers[logger][i])
+                metrics_dict = Logger.merge(self.format_from_wandb(m, self.loggers[logger][i]), metrics_dict)
+
+        return metrics_dict
+
+    @staticmethod
+    def merge(source, destination):
+        for key, value in source.items():
+            if isinstance(value, dict):
+                # get node or create one
+                node = destination.setdefault(key, {})
+                Logger.merge(value, node)
+            else:
+                destination[key] = value
+
+        return destination
