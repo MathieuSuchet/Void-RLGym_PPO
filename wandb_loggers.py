@@ -6,12 +6,23 @@ from rlgym_ppo.util import MetricsLogger
 
 
 class WandbMetricsLogger(MetricsLogger):
+    """
+    A logger that contains metrics and which logs to wandb
+    """
     @property
     def metrics(self) -> List[str]:
+        """
+        All the metrics names that will be uploaded to wandb
+        :return: The metrics names
+        """
         return []
 
 
 class BallHeightLogger(WandbMetricsLogger):
+    """
+    Logs :\n
+    The ball's height
+    """
     @property
     def metrics(self) -> List[str]:
         return ["stats/ball/ball_height"]
@@ -21,6 +32,10 @@ class BallHeightLogger(WandbMetricsLogger):
 
 
 class TouchLogger(WandbMetricsLogger):
+    """
+    Logs :\n
+    The mean touch of all the agents
+    """
     @property
     def metrics(self) -> List[str]:
         return ["stats/touch_rate"]
@@ -31,6 +46,10 @@ class TouchLogger(WandbMetricsLogger):
 
 
 class GoalLogger(WandbMetricsLogger):
+    """
+    Logs :\n
+    The goal rate
+    """
     @property
     def metrics(self) -> List[str]:
         return ["stats/goal_rate"]
@@ -41,6 +60,11 @@ class GoalLogger(WandbMetricsLogger):
 
 
 class PlayerVelocityLogger(WandbMetricsLogger):
+    """
+    Logs :\n
+    The mean of all player's linear velocity's magnitude\n
+    The mean of all player's angular velocity's magnitude
+    """
     @property
     def metrics(self) -> List[str]:
         return ["stats/player/avg_lin_vel", "stats/player/avg_ang_vel"]
@@ -62,6 +86,11 @@ class PlayerVelocityLogger(WandbMetricsLogger):
 
 
 class BallVelocityLogger(WandbMetricsLogger):
+    """
+    Logs :\n
+    The ball's linear velocity's magnitude\n
+    The ball's angular velocity's magnitude
+    """
     @property
     def metrics(self) -> List[str]:
         return ["stats/ball/avg_lin_vel", "stats/ball/avg_ang_vel"]
