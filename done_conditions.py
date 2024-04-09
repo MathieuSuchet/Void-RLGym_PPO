@@ -18,8 +18,6 @@ class LoggedAnyCondition(AnyCondition):
         for c in self.conditions:
 
             result = any(c.is_done(agents, state, shared_info).values())
-            if result:
-                print(c.__class__)
             data.setdefault(c.__class__.__name__, int(result))
             if result and not log:
                 log = True
@@ -28,3 +26,16 @@ class LoggedAnyCondition(AnyCondition):
                 self.name: data
             }})
         return super().is_done(agents, state, shared_info)
+
+
+class BallTouchedCondition(DoneCondition):
+    def reset(self, initial_state: StateType, shared_info: Dict[str, Any]) -> None:
+        pass
+
+    def is_done(self, agents: List[AgentID], state: StateType, shared_info: Dict[str, Any]) -> Dict[AgentID, bool]:
+        dones = {agent: False for agent in agents}
+
+        for agent in agents:
+            dones[agent] = state.cars[agent].ball_touches > 0
+
+        return dones

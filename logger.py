@@ -184,8 +184,11 @@ class Logger(MetricsLogger):
             local_starts, local_ends = metrics_flags
             for j in range(len(local_starts)):
                 start, end = local_starts[j], local_ends[j]
+
+                logger = list(self.loggers.keys())[i]
+
                 self.loggers[list(self.loggers.keys())[i]].append(
-                    np.mean([metric_data[i][start:end] for metric_data in metrics_data]))
+                     logger.compute_data(np.array([metric_data[i][start:end] for metric_data in metrics_data])))
 
         for logger in self.loggers.keys():
             for i, m in enumerate(logger.metrics):

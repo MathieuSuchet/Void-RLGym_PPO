@@ -6,7 +6,7 @@ from rlgym.rocket_league.api import GameState
 from rlgym.rocket_league.common_values import BLUE_TEAM, ORANGE_TEAM, ORANGE_GOAL_BACK, BLUE_GOAL_BACK, BALL_MAX_SPEED, \
     CAR_MAX_SPEED, BALL_RADIUS
 
-import math
+import math_gym
 from logger import Logger, _add
 
 
@@ -111,7 +111,7 @@ class VelBallToGoalReward(RewardFunction):
                 # Vector version of v=d/t <=> t=d/v <=> 1/t=v/d
                 # Max value should be max_speed / ball_radius = 2300 / 94 = 24.5
                 # Used to guide the agent towards the ball
-                inv_t = math.scalar_projection(vel, pos_diff)
+                inv_t = math_gym.scalar_projection(vel, pos_diff)
                 rewards[agent] = inv_t
             else:
                 # Regular component velocity
@@ -165,3 +165,21 @@ class EventReward(RewardFunction):
     def get_rewards(self, agents: List[AgentID], state: StateType, is_terminated: Dict[AgentID, bool],
                     is_truncated: Dict[AgentID, bool], shared_info: Dict[str, Any]) -> Dict[AgentID, RewardType]:
         return {agent: np.dot(np.array(self._extract_values(agent, state)), self.weights) for agent in agents}
+
+
+class FaceBallReward(RewardFunction):
+    def reset(self, initial_state: StateType, shared_info: Dict[str, Any]) -> None:
+        pass
+
+    def get_rewards(self, agents: List[AgentID], state: StateType, is_terminated: Dict[AgentID, bool],
+                    is_truncated: Dict[AgentID, bool], shared_info: Dict[str, Any]) -> Dict[AgentID, RewardType]:
+        rewards = {agent: 0. for agent in agents}
+
+        for agent in agents:
+            player = state.cars[agent]
+
+            pos_diff = state.ball.position - player.physics.position
+            norm_pos_diff = pos_diff / np.linalg.norm(pos_diff)
+            rewards[agent] = float(np.dot(player.physics.forward, norm_pos_diff))
+
+        return rewards

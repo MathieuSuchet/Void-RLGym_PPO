@@ -11,18 +11,20 @@ from rlgym_ppo import Learner
 from rlgym_ppo.util import RLGymV2GymWrapper
 
 import wandb
-from done_conditions import LoggedAnyCondition
+from done_conditions import LoggedAnyCondition, BallTouchedCondition
 from logger import Logger
-from rewards import LoggerCombinedReward, VelBallToGoalReward, LiuDistancePlayerToBallReward, EventReward
-from wandb_loggers import BallVelocityLogger, BallHeightLogger, TouchLogger, GoalLogger, PlayerVelocityLogger
+from rewards import LoggerCombinedReward, VelBallToGoalReward, LiuDistancePlayerToBallReward, EventReward, FaceBallReward
+from wandb_loggers import BallVelocityLogger, BallHeightLogger, TouchLogger, GoalLogger, PlayerVelocityLogger, \
+    TouchHeightLogger, GoalVelocityLogger
+from state_mutators import RandomStateMutator, ShotMutator, WeightedStateMutator
 
 TICK_RATE = 1. / 120.
 tick_skip = 8
 
-n_proc = 1
-ts_per_iteration = 10_000
+n_proc = 10
+ts_per_iteration = 200_000
 timestep_limit = ts_per_iteration * 100
-ppo_batch_size = ts_per_iteration
+ppo_batch_size = ts_per_iteration // 2
 n_epochs = 10
 ppo_minibatch_size = ppo_batch_size // n_epochs
 
@@ -31,29 +33,37 @@ min_inference_size = max(1, int(round(n_proc * 0.9)))
 
 blue_count = orange_count = 3
 
-state_mutator = MutatorSequence(FixedTeamSizeMutator(blue_count, orange_count), KickoffMutator())
+state_mutator = MutatorSequence(FixedTeamSizeMutator(blue_count, orange_count), WeightedStateMutator(
+    RandomStateMutator(),
+    ShotMutator(),
+    KickoffMutator()
+))
 action_parser = RepeatAction(LookupTableAction(), repeats=tick_skip)
 obs_builder = DefaultObs()
 reward_fn = LoggerCombinedReward(
     EventReward(
-        goal_w=100,
-        concede_w=-100,
-        touch_w=10
+        goal_w=1,
+        concede_w=-1,
+        touch_w=.01
     ),
     (
         VelBallToGoalReward(),
-        2
+        .1
     ),
     (
         LiuDistancePlayerToBallReward(),
-        2
+        .1
+    ),
+    (
+        FaceBallReward(),
+        .1
     )
 )
 
 total_timeout = 3
 termination_conditions = LoggedAnyCondition(
-    GoalCondition(),
     TimeoutCondition(total_timeout / TICK_RATE),
+    BallTouchedCondition(),
     name="Terminations"
 )
 
@@ -87,12 +97,12 @@ def create_env():
 if __name__ == "__main__":
     config = {
         "project": "rlgym_ppo_tests",
-        "entity": "madaos",
+        "entity": "cryy_salt",
         "name": "logger_run"
     }
 
     if continue_run:
-        run_id = "id_to_continue"  # TODO: change the id to match the last wandb run's id
+        run_id = "a1vpkzow"  # TODO: change the id to match the last wandb run's id
         wandb_run = wandb.init(
             entity=config["entity"],
             name=config["name"],
@@ -107,7 +117,9 @@ if __name__ == "__main__":
         TouchLogger(),
         GoalLogger(),
         BallVelocityLogger(),
-        PlayerVelocityLogger()
+        PlayerVelocityLogger(),
+        TouchHeightLogger(),
+        GoalVelocityLogger()
     )
 
     agent = Learner(
@@ -117,11 +129,13 @@ if __name__ == "__main__":
         timestep_limit=timestep_limit,
         ppo_batch_size=ppo_batch_size,
         ppo_minibatch_size=ppo_minibatch_size,
+
+
         ppo_epochs=n_epochs,
         policy_layer_sizes=(256, 256, 256),
         critic_layer_sizes=(256, 256, 256),
 
-        # checkpoint_load_folder="data/rl_model/-1711460520183028600/100002/",
+        # checkpoint_load_folder="data/rl_model/-1712595863018130200/7000596",
         checkpoints_save_folder="data/rl_model/",
         n_proc=n_proc,
         min_inference_size=min_inference_size,
