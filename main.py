@@ -1,7 +1,6 @@
 from rlgym.api import RLGym
 from rlgym.rocket_league.action_parsers import RepeatAction, LookupTableAction
 from rlgym.rocket_league.done_conditions import TimeoutCondition, NoTouchTimeoutCondition
-from rlgym.rocket_league.done_conditions.goal_condition import GoalCondition
 from rlgym.rocket_league.game.game_engine import GameEngine
 from rlgym.rocket_league.obs_builders.default_obs import DefaultObs
 from rlgym.rocket_league.sim import RLViserRenderer
@@ -13,16 +12,18 @@ from rlgym_ppo.util import RLGymV2GymWrapper
 import wandb
 from done_conditions import LoggedAnyCondition, BallTouchedCondition
 from logger import Logger
-from rewards import LoggerCombinedReward, VelBallToGoalReward, LiuDistancePlayerToBallReward, EventReward, FaceBallReward
-from wandb_loggers import BallVelocityLogger, BallHeightLogger, TouchLogger, GoalLogger, PlayerVelocityLogger, \
-    TouchHeightLogger, GoalVelocityLogger
+from rewards import LoggerCombinedReward, VelBallToGoalReward, LiuDistancePlayerToBallReward, EventReward, \
+    FaceBallReward
 from state_mutators import RandomStateMutator, ShotMutator, WeightedStateMutator
+from wandb_loggers.global_loggers import get_all_global_loggers
+from wandb_loggers.ball_loggers import get_all_ball_loggers
+from wandb_loggers.player_loggers import get_all_player_loggers
 
 TICK_RATE = 1. / 120.
 tick_skip = 8
 
-n_proc = 10
-ts_per_iteration = 200_000
+n_proc = 1
+ts_per_iteration = 10_000
 timestep_limit = ts_per_iteration * 100
 ppo_batch_size = ts_per_iteration // 2
 n_epochs = 10
@@ -44,7 +45,9 @@ reward_fn = LoggerCombinedReward(
     EventReward(
         goal_w=1,
         concede_w=-1,
-        touch_w=.01
+        touch_w=.01,
+        shot_w=.1,
+        save_w=.1
     ),
     (
         VelBallToGoalReward(),
@@ -113,13 +116,9 @@ if __name__ == "__main__":
         wandb_run = None
 
     logger = Logger(
-        BallHeightLogger(),
-        TouchLogger(),
-        GoalLogger(),
-        BallVelocityLogger(),
-        PlayerVelocityLogger(),
-        TouchHeightLogger(),
-        GoalVelocityLogger()
+        *get_all_global_loggers(),
+        *get_all_ball_loggers(),
+        *get_all_player_loggers()
     )
 
     agent = Learner(

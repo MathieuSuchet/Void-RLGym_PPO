@@ -137,7 +137,10 @@ class LiuDistancePlayerToBallReward(RewardFunction):
 
 
 class EventReward(RewardFunction):
-    def __init__(self, goal_w: float, concede_w: float, touch_w: float):
+    def reset(self, initial_state: StateType, shared_info: Dict[str, Any]) -> None:
+        pass
+
+    def __init__(self, goal_w: float, concede_w: float, touch_w: float, shot_w: float, save_w: float):
         """
         Rewards when events occur
         :param goal_w: Weight of goal event
@@ -147,20 +150,18 @@ class EventReward(RewardFunction):
         self.goal_w = goal_w
         self.concede_w = concede_w
         self.touch_w = touch_w
-        self.weights = np.array([self.goal_w, self.concede_w, self.touch_w])
-        self._last_touched = {}
+        self.shot_w = shot_w
+        self.save_w = save_w
+        self.weights = np.array([self.goal_w, self.concede_w, self.touch_w, self.shot_w, self.save_w])
 
     def _extract_values(self, agent: AgentID, state: GameState):
         goal = 1 if state.scoring_team == state.cars[agent].team_num else 0
         concede = -1 if state.scoring_team != state.cars[agent].team_num and state.scoring_team is not None else 0
-        touch = state.cars[agent].ball_touches > self._last_touched[agent]
+        touch = state.cars[agent].ball_touches
+        shot = state.cars[agent].shots
+        save = state.cars[agent].saves
 
-        self._last_touched[agent] = state.cars[agent].ball_touches
-
-        return [goal, concede, touch]
-
-    def reset(self, initial_state: StateType, shared_info: Dict[str, Any]) -> None:
-        self._last_touched = {agent: 0 for agent in initial_state.cars.keys()}
+        return [goal, concede, touch, shot, save]
 
     def get_rewards(self, agents: List[AgentID], state: StateType, is_terminated: Dict[AgentID, bool],
                     is_truncated: Dict[AgentID, bool], shared_info: Dict[str, Any]) -> Dict[AgentID, RewardType]:

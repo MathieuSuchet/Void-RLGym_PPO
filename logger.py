@@ -8,7 +8,7 @@ from rlgym.rocket_league.api import GameState
 from rlgym_ppo.util import MetricsLogger
 from wandb.sdk.wandb_run import Run
 
-from wandb_loggers import WandbMetricsLogger
+from wandb_loggers.global_loggers import WandbMetricsLogger
 
 
 def _add(x: Any, y: Any):

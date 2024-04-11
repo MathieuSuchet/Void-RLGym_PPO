@@ -5,6 +5,10 @@ from rlgym.rocket_league.api import GameState
 from rlgym_ppo.util import MetricsLogger
 
 
+def get_all_global_loggers():
+    return [GoalLogger(), TouchLogger(), GoalVelocityLogger(), TouchHeightLogger(), ShotLogger(), SaveLogger()]
+
+
 class WandbMetricsLogger(MetricsLogger):
     """
     A logger that contains metrics and which logs to wandb
@@ -22,18 +26,19 @@ class WandbMetricsLogger(MetricsLogger):
         return np.mean(metrics)
 
 
-class BallHeightLogger(WandbMetricsLogger):
+class GoalLogger(WandbMetricsLogger):
     """
     Logs :\n
-    The ball's height
+    The goal rate
     """
 
     @property
     def metrics(self) -> List[str]:
-        return ["stats/ball/ball_height"]
+        return ["stats/goal_rate"]
 
     def _collect_metrics(self, game_state: GameState) -> np.ndarray:
-        return np.array([game_state.ball.position[2]])
+        goal_rate = game_state.goal_scored
+        return np.array([goal_rate])
 
 
 class TouchLogger(WandbMetricsLogger):
@@ -51,64 +56,22 @@ class TouchLogger(WandbMetricsLogger):
         return np.array([touch_rate])
 
 
-class GoalLogger(WandbMetricsLogger):
+class GoalVelocityLogger(WandbMetricsLogger):
     """
     Logs :\n
-    The goal rate
+    The velocity if scored else 0
     """
 
     @property
     def metrics(self) -> List[str]:
-        return ["stats/goal_rate"]
+        return ["stats/avg_goal_vel"]
 
     def _collect_metrics(self, game_state: GameState) -> np.ndarray:
-        goal_rate = game_state.goal_scored
-        return np.array([goal_rate])
+        return np.array([np.linalg.norm(game_state.ball.linear_velocity) if game_state.goal_scored else 0])
 
-
-class PlayerVelocityLogger(WandbMetricsLogger):
-    """
-    Logs :\n
-    The mean of all player's linear velocity's magnitude\n
-    The mean of all player's angular velocity's magnitude
-    """
-
-    @property
-    def metrics(self) -> List[str]:
-        return ["stats/player/avg_lin_vel", "stats/player/avg_ang_vel"]
-
-    def _collect_metrics(self, game_state: GameState) -> np.ndarray:
-        n_cars = len(game_state.cars.values())
-        lin_vel = np.zeros((n_cars, 3))
-        ang_vel = np.zeros((n_cars, 3))
-
-        for i in range(n_cars):
-            car = list(game_state.cars.values())[i]
-            lin_vel[i] = car.physics.linear_velocity
-            ang_vel[i] = car.physics.angular_velocity
-
-        lin_vel, ang_vel = np.mean(lin_vel, axis=1), np.mean(ang_vel, axis=1)
-        lin_vel, ang_vel = np.linalg.norm(lin_vel), np.linalg.norm(ang_vel)
-
-        return np.array([lin_vel, ang_vel])
-
-
-class BallVelocityLogger(WandbMetricsLogger):
-    """
-    Logs :\n
-    The ball's linear velocity's magnitude\n
-    The ball's angular velocity's magnitude
-    """
-
-    @property
-    def metrics(self) -> List[str]:
-        return ["stats/ball/avg_lin_vel", "stats/ball/avg_ang_vel"]
-
-    def _collect_metrics(self, game_state: GameState) -> np.ndarray:
-        return np.array([
-            np.linalg.norm(game_state.ball.linear_velocity),
-            np.linalg.norm(game_state.ball.angular_velocity)
-        ])
+    def compute_data(self, metrics: np.array):
+        metrics = metrics[np.nonzero(metrics)]
+        return np.mean(metrics) if metrics.size != 0 else 0
 
 
 class TouchHeightLogger(WandbMetricsLogger):
@@ -149,18 +112,19 @@ class TouchHeightLogger(WandbMetricsLogger):
         return np.mean(metrics) if metrics.size != 0 else 0
 
 
-class GoalVelocityLogger(WandbMetricsLogger):
-    """
-    Logs :\n
-    The velocity if scored else 0
-    """
+class ShotLogger(WandbMetricsLogger):
     @property
     def metrics(self) -> List[str]:
-        return ["stats/avg_goal_vel"]
+        return ["stats/shot_rate"]
 
     def _collect_metrics(self, game_state: GameState) -> np.ndarray:
-        return np.array([np.linalg.norm(game_state.ball.linear_velocity) if game_state.goal_scored else 0])
+        return np.array((np.sum([car.shots for car in game_state.cars.values()])))
 
-    def compute_data(self, metrics: np.array):
-        metrics = metrics[np.nonzero(metrics)]
-        return np.mean(metrics) if metrics.size != 0 else 0
+
+class SaveLogger(WandbMetricsLogger):
+    @property
+    def metrics(self) -> List[str]:
+        return ["stats/save_rate"]
+
+    def _collect_metrics(self, game_state: GameState) -> np.ndarray:
+        return np.array((np.sum([car.saves for car in game_state.cars.values()])))
