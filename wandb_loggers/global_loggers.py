@@ -118,7 +118,7 @@ class ShotLogger(WandbMetricsLogger):
         return ["stats/shot_rate"]
 
     def _collect_metrics(self, game_state: GameState) -> np.ndarray:
-        return np.array((np.sum([car.shots for car in game_state.cars.values()])))
+        return np.array([np.sum([car.shots for car in game_state.cars.values()])])
 
 
 class SaveLogger(WandbMetricsLogger):
@@ -127,4 +127,4 @@ class SaveLogger(WandbMetricsLogger):
         return ["stats/save_rate"]
 
     def _collect_metrics(self, game_state: GameState) -> np.ndarray:
-        return np.array((np.sum([car.saves for car in game_state.cars.values()])))
+        return np.array([np.sum([car.saves for car in game_state.cars.values()])])

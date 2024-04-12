@@ -1,6 +1,6 @@
 from rlgym.api import RLGym
 from rlgym.rocket_league.action_parsers import RepeatAction, LookupTableAction
-from rlgym.rocket_league.done_conditions import TimeoutCondition, NoTouchTimeoutCondition
+from rlgym.rocket_league.done_conditions import TimeoutCondition, NoTouchTimeoutCondition, GoalCondition
 from rlgym.rocket_league.game.game_engine import GameEngine
 from rlgym.rocket_league.obs_builders.default_obs import DefaultObs
 from rlgym.rocket_league.sim import RLViserRenderer
@@ -10,6 +10,7 @@ from rlgym_ppo import Learner
 from rlgym_ppo.util import RLGymV2GymWrapper
 
 import wandb
+from action_parsers import WandbActionParser
 from done_conditions import LoggedAnyCondition, BallTouchedCondition
 from logger import Logger
 from rewards import LoggerCombinedReward, VelBallToGoalReward, LiuDistancePlayerToBallReward, EventReward, \
@@ -24,7 +25,7 @@ tick_skip = 8
 
 n_proc = 1
 ts_per_iteration = 10_000
-timestep_limit = ts_per_iteration * 100
+timestep_limit = ts_per_iteration * 10_000
 ppo_batch_size = ts_per_iteration // 2
 n_epochs = 10
 ppo_minibatch_size = ppo_batch_size // n_epochs
@@ -34,12 +35,8 @@ min_inference_size = max(1, int(round(n_proc * 0.9)))
 
 blue_count = orange_count = 3
 
-state_mutator = MutatorSequence(FixedTeamSizeMutator(blue_count, orange_count), WeightedStateMutator(
-    RandomStateMutator(),
-    ShotMutator(),
-    KickoffMutator()
-))
-action_parser = RepeatAction(LookupTableAction(), repeats=tick_skip)
+state_mutator = MutatorSequence(FixedTeamSizeMutator(blue_count, orange_count), WeightedStateMutator(KickoffMutator()))
+action_parser = WandbActionParser(RepeatAction(LookupTableAction(), repeats=tick_skip))
 obs_builder = DefaultObs()
 reward_fn = LoggerCombinedReward(
     EventReward(
@@ -65,8 +62,9 @@ reward_fn = LoggerCombinedReward(
 
 total_timeout = 3
 termination_conditions = LoggedAnyCondition(
+    GoalCondition(),
     TimeoutCondition(total_timeout / TICK_RATE),
-    BallTouchedCondition(),
+    # BallTouchedCondition(),
     name="Terminations"
 )
 
@@ -105,7 +103,7 @@ if __name__ == "__main__":
     }
 
     if continue_run:
-        run_id = "a1vpkzow"  # TODO: change the id to match the last wandb run's id
+        run_id = "ldokyvda"  # TODO: change the id to match the last wandb run's id
         wandb_run = wandb.init(
             entity=config["entity"],
             name=config["name"],
@@ -134,7 +132,7 @@ if __name__ == "__main__":
         policy_layer_sizes=(256, 256, 256),
         critic_layer_sizes=(256, 256, 256),
 
-        # checkpoint_load_folder="data/rl_model/-1712595863018130200/7000596",
+        # checkpoint_load_folder="data/rl_model/-1712845896901723900/28001784",
         checkpoints_save_folder="data/rl_model/",
         n_proc=n_proc,
         min_inference_size=min_inference_size,

@@ -1,6 +1,8 @@
 data/
 logging/
 wandb/
+assets.path
+rlviser.exe
 
 # Created by https://www.toptal.com/developers/gitignore/api/pycharm,python
 # Edit at https://www.toptal.com/developers/gitignore?templates=pycharm,python

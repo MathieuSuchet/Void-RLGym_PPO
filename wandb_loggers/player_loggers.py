@@ -1,15 +1,24 @@
-from math import sqrt
 from typing import List
 
 import numpy as np
-from rlgym.rocket_league.api import GameState, Car
-from rlgym.rocket_league.common_values import SIDE_WALL_X, CEILING_Z, BACK_WALL_Y
+from rlgym.rocket_league.api import GameState
 
 from wandb_loggers.global_loggers import WandbMetricsLogger
+from wandb_loggers.logger_utils import _is_on_wall, _is_on_ceiling
 
 
-def get_all_player_loggers() -> List[WandbMetricsLogger]:
-    return [PlayerVelocityLogger(), PlayerHeightLogger(), PlayerBoostLogger(), PlayerFlipTimeLogger()]
+def get_all_player_loggers(wall_width_tolerance: float = 100., wall_height_tolerance: float = 100.) -> List[WandbMetricsLogger]:
+    return [
+        PlayerVelocityLogger(),
+        PlayerHeightLogger(),
+        PlayerBoostLogger(),
+        PlayerFlipTimeLogger(),
+        PlayerWallTimeLogger(wall_width_tolerance, wall_height_tolerance),
+        PlayerCeilingTimeLogger(wall_width_tolerance, wall_height_tolerance),
+        PlayerWallHeightLogger(wall_width_tolerance, wall_height_tolerance),
+        PlayerRelDistToBallLogger(),
+        PlayerRelVelToBallLogger()
+    ]
 
 
 class PlayerVelocityLogger(WandbMetricsLogger):
@@ -40,6 +49,10 @@ class PlayerVelocityLogger(WandbMetricsLogger):
 
 
 class PlayerHeightLogger(WandbMetricsLogger):
+    """
+    Logs :\n
+    Player's average height
+    """
     @property
     def metrics(self) -> List[str]:
         return ["stats/player/avg_height"]
@@ -55,6 +68,10 @@ class PlayerHeightLogger(WandbMetricsLogger):
 
 
 class PlayerBoostLogger(WandbMetricsLogger):
+    """
+    Logs :\n
+    Player's average boost
+    """
     @property
     def metrics(self) -> List[str]:
         return ["stats/player/avg_boost_amount"]
@@ -74,6 +91,10 @@ class PlayerBoostLogger(WandbMetricsLogger):
 
 
 class PlayerFlipTimeLogger(WandbMetricsLogger):
+    """
+    Logs :\n
+    Average time before flipping/double jumping
+    """
     def __init__(self):
         self.time_between_jump_and_flip = {}
 
@@ -106,10 +127,11 @@ class PlayerFlipTimeLogger(WandbMetricsLogger):
         return np.mean(metrics)
 
 
-X_AT_ZERO = 8064
-
-
 class PlayerWallTimeLogger(WandbMetricsLogger):
+    """
+    Logs :\n
+    Average time on wall
+    """
 
     def __init__(self, wall_width_tolerance: float = 100, wall_height_tolerance: float = 100):
         self.wall_width_tolerance = wall_width_tolerance
@@ -120,42 +142,6 @@ class PlayerWallTimeLogger(WandbMetricsLogger):
     def metrics(self) -> List[str]:
         return ["stats/player/avg_wall_time"]
 
-    def _is_on_wall(self, car: Car) -> bool:
-        on_flat_wall = (
-                car.on_ground
-                # Side wall comparison
-                and SIDE_WALL_X - self.wall_width_tolerance
-                < abs(car.physics.position[0])
-                < SIDE_WALL_X + self.wall_width_tolerance
-                # Back wall comparison
-                and BACK_WALL_Y - self.wall_width_tolerance
-                < abs(car.physics.position[1])
-                < BACK_WALL_Y + self.wall_width_tolerance
-                # Ceiling/Ground comparison
-                and self.wall_height_tolerance
-                < car.physics.position[2]
-                < CEILING_Z - self.wall_height_tolerance
-        )
-
-        if on_flat_wall:
-            return True
-
-        is_on_corner = False
-
-        for a in (-1, 1):
-            if is_on_corner:
-                break
-
-            for b in (-1, 1):
-                if (car.physics.position[1] - self.wall_width_tolerance
-                        < a * car.physics.position[0] + (X_AT_ZERO * b)
-                        < car.physics.position[1] + self.wall_width_tolerance):
-                    # On wall
-                    is_on_corner = True
-                    break
-
-        return is_on_corner
-
     def _collect_metrics(self, game_state: GameState) -> np.ndarray:
         times = np.zeros((len(game_state.cars.keys()),))
         for agent in game_state.cars.keys():
@@ -163,7 +149,8 @@ class PlayerWallTimeLogger(WandbMetricsLogger):
                 self.time_between_wall_and_other.setdefault(agent, 0)
 
         for i, (agent, car) in enumerate(game_state.cars.items()):
-            if self._is_on_wall(car):
+            if _is_on_wall(car, wall_width_tolerance=self.wall_width_tolerance,
+                           wall_height_tolerance=self.wall_height_tolerance):
                 self.time_between_wall_and_other[agent] += 1
             else:
                 times[i] = self.time_between_wall_and_other[agent]
@@ -173,3 +160,122 @@ class PlayerWallTimeLogger(WandbMetricsLogger):
         if times.size == 0:
             return np.array([0])
         return np.array([np.mean(times)])
+
+    def compute_data(self, metrics):
+        self.time_between_wall_and_other.clear()
+        metrics = metrics[np.nonzero(metrics)]
+        if metrics.size == 0:
+            return 0
+        return np.mean(metrics)
+
+
+class PlayerWallHeightLogger(WandbMetricsLogger):
+    """
+    Logs :\n
+    Average player height (when on wall)
+    """
+    def __init__(self, wall_width_tolerance: float = 100, wall_height_tolerance: float = 100):
+        self.wall_width_tolerance = wall_width_tolerance
+        self.wall_height_tolerance = wall_height_tolerance
+
+    @property
+    def metrics(self) -> List[str]:
+        return ["stats/player/avg_wall_height"]
+
+    def _collect_metrics(self, game_state: GameState) -> np.ndarray:
+        n_cars = len(game_state.cars.keys())
+        heights = np.zeros((n_cars,))
+
+        for i, car in enumerate(game_state.cars.values()):
+            if _is_on_wall(car, wall_width_tolerance=self.wall_width_tolerance,
+                           wall_height_tolerance=self.wall_height_tolerance):
+                heights[i] = car.physics.position[2]
+
+        heights = heights[np.nonzero(heights)]
+        if heights.size == 0:
+            return np.array([0])
+        return np.array([np.mean(heights)])
+
+
+class PlayerCeilingTimeLogger(WandbMetricsLogger):
+    """
+    Logs :\n
+    Average ceiling time
+    """
+    def __init__(self, wall_width_tolerance: float = 100, wall_height_tolerance: float = 100):
+        self.wall_width_tolerance = wall_width_tolerance
+        self.wall_height_tolerance = wall_height_tolerance
+        self.time_between_ceil_and_other = {}
+
+    @property
+    def metrics(self) -> List[str]:
+        return ["stats/player/avg_ceil_time"]
+
+    def _collect_metrics(self, game_state: GameState) -> np.ndarray:
+        times = np.zeros((len(game_state.cars.keys()),))
+        for agent in game_state.cars.keys():
+            if agent not in self.time_between_ceil_and_other.keys():
+                self.time_between_ceil_and_other.setdefault(agent, 0)
+
+        for i, (agent, car) in enumerate(game_state.cars.items()):
+            if _is_on_ceiling(car, wall_width_tolerance=self.wall_width_tolerance,
+                              wall_height_tolerance=self.wall_height_tolerance):
+                self.time_between_ceil_and_other[agent] += 1
+            else:
+                times[i] = self.time_between_ceil_and_other[agent]
+                self.time_between_ceil_and_other[agent] = 0
+
+        times = times[np.nonzero(times)]
+        if times.size == 0:
+            return np.array([0])
+        return np.array([np.mean(times)])
+
+    def compute_data(self, metrics):
+        self.time_between_ceil_and_other.clear()
+        metrics = metrics[np.nonzero(metrics)]
+        if metrics.size == 0:
+            return 0
+        return np.mean(metrics)
+
+
+class PlayerRelDistToBallLogger(WandbMetricsLogger):
+    """
+    Logs :\n
+    Average relative distance to ball
+    """
+    @property
+    def metrics(self) -> List[str]:
+        return ["stats/player/avg_rel_dist_to_ball"]
+
+    def _collect_metrics(self, game_state: GameState) -> np.ndarray:
+        n_cars = len(game_state.cars.keys())
+        rel_dists = np.zeros((n_cars, ))
+        ball = game_state.ball
+
+        for i, agent in enumerate(game_state.cars.values()):
+            rel_dists[i] = np.linalg.norm(ball.position - agent.physics.position)
+
+        return np.array([np.mean(rel_dists)])
+
+
+class PlayerRelVelToBallLogger(WandbMetricsLogger):
+    """
+    Logs :\n
+    Average relative velocity to ball
+    """
+    @property
+    def metrics(self) -> List[str]:
+        return ["stats/player/avg_rel_vel_to_ball"]
+
+    def _collect_metrics(self, game_state: GameState) -> np.ndarray:
+        n_cars = len(game_state.cars.keys())
+        rel_vel = np.zeros((n_cars,))
+        ball = game_state.ball
+
+        for i, agent in enumerate(game_state.cars.values()):
+            rel_dist = ball.position - agent.physics.position
+            player_vel = agent.physics.linear_velocity
+            ball_vel = ball.linear_velocity
+            rel_vel[i] = np.dot(player_vel - ball_vel, rel_dist / np.linalg.norm(rel_dist))
+
+        return np.array([np.mean(rel_vel)])
