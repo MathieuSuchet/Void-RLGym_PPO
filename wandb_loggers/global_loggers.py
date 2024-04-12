@@ -6,7 +6,14 @@ from rlgym_ppo.util import MetricsLogger
 
 
 def get_all_global_loggers():
-    return [GoalLogger(), TouchLogger(), GoalVelocityLogger(), TouchHeightLogger(), ShotLogger(), SaveLogger()]
+    return [
+        GoalLogger(),
+        TouchLogger(),
+        GoalVelocityLogger(),
+        TouchHeightLogger(),
+        ShotLogger(),
+        SaveLogger()
+    ]
 
 
 class WandbMetricsLogger(MetricsLogger):

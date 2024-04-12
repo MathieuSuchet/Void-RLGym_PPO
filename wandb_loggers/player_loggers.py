@@ -17,7 +17,8 @@ def get_all_player_loggers(wall_width_tolerance: float = 100., wall_height_toler
         PlayerCeilingTimeLogger(wall_width_tolerance, wall_height_tolerance),
         PlayerWallHeightLogger(wall_width_tolerance, wall_height_tolerance),
         PlayerRelDistToBallLogger(),
-        PlayerRelVelToBallLogger()
+        PlayerRelVelToBallLogger(),
+        PlayerDistanceToOthersLogger()
     ]
 
 
@@ -279,3 +280,44 @@ class PlayerRelVelToBallLogger(WandbMetricsLogger):
             rel_vel[i] = np.dot(player_vel - ball_vel, rel_dist / np.linalg.norm(rel_dist))
 
         return np.array([np.mean(rel_vel)])
+
+
+class PlayerDistanceToOthersLogger(WandbMetricsLogger):
+    """
+    Logs :\n
+    Average player distance to allies\n
+    Average player distance to opponents\n
+    Average player distance to all
+    """
+    @property
+    def metrics(self) -> List[str]:
+        return ["stats/player/avg_dist_to_allies", "stats/player/avg_dist_to_opp", "stats/player/avg_dist_to_others"]
+
+    def _collect_metrics(self, game_state: GameState) -> np.ndarray:
+        n_cars = len(game_state.cars.keys())
+        dist_to_allies = dist_to_opp = dist_to_all = np.zeros((n_cars - 1, ))
+
+        for i, agent in enumerate(game_state.cars.keys()):
+            dta = dto = dtall = []
+            agent_car = game_state.cars[agent]
+            for other in game_state.cars.keys():
+                if agent == other:
+                    continue
+
+                other_car = game_state.cars[other]
+                dist_to_other = np.linalg.norm(other_car.physics.position - agent_car.physics.position)
+                if agent_car.team_num != other_car.team_num:
+                    dto.append(dist_to_other)
+                else:
+                    dta.append(dist_to_other)
+                dtall.append(dist_to_other)
+
+            dist_to_allies[i] = np.mean(dta)
+            dist_to_opp[i] = np.mean(dto)
+            dist_to_allies[i] = np.mean(dtall)
+
+        dist_to_allies = dist_to_allies[np.nonzero(dist_to_allies)]
+        dist_to_opp = dist_to_opp[np.nonzero(dist_to_opp)]
+        dist_to_all = dist_to_all[np.nonzero(dist_to_all)]
+
+        return np.array([dist_to_allies, dist_to_opp, dist_to_all])

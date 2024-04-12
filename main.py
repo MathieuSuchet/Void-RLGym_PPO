@@ -1,6 +1,6 @@
 from rlgym.api import RLGym
 from rlgym.rocket_league.action_parsers import RepeatAction, LookupTableAction
-from rlgym.rocket_league.done_conditions import TimeoutCondition, NoTouchTimeoutCondition, GoalCondition
+from rlgym.rocket_league.done_conditions import TimeoutCondition, NoTouchTimeoutCondition
 from rlgym.rocket_league.game.game_engine import GameEngine
 from rlgym.rocket_league.obs_builders.default_obs import DefaultObs
 from rlgym.rocket_league.sim import RLViserRenderer
@@ -16,15 +16,15 @@ from logger import Logger
 from rewards import LoggerCombinedReward, VelBallToGoalReward, LiuDistancePlayerToBallReward, EventReward, \
     FaceBallReward
 from state_mutators import RandomStateMutator, ShotMutator, WeightedStateMutator
-from wandb_loggers.global_loggers import get_all_global_loggers
 from wandb_loggers.ball_loggers import get_all_ball_loggers
+from wandb_loggers.global_loggers import get_all_global_loggers
 from wandb_loggers.player_loggers import get_all_player_loggers
 
 TICK_RATE = 1. / 120.
 tick_skip = 8
 
-n_proc = 1
-ts_per_iteration = 10_000
+n_proc = 10
+ts_per_iteration = 200_000
 timestep_limit = ts_per_iteration * 10_000
 ppo_batch_size = ts_per_iteration // 2
 n_epochs = 10
@@ -35,7 +35,13 @@ min_inference_size = max(1, int(round(n_proc * 0.9)))
 
 blue_count = orange_count = 3
 
-state_mutator = MutatorSequence(FixedTeamSizeMutator(blue_count, orange_count), WeightedStateMutator(KickoffMutator()))
+state_mutator = MutatorSequence(
+    FixedTeamSizeMutator(blue_count, orange_count),
+    WeightedStateMutator(
+        KickoffMutator(),
+        RandomStateMutator(),
+        ShotMutator()
+    ))
 action_parser = WandbActionParser(RepeatAction(LookupTableAction(), repeats=tick_skip))
 obs_builder = DefaultObs()
 reward_fn = LoggerCombinedReward(
@@ -60,15 +66,15 @@ reward_fn = LoggerCombinedReward(
     )
 )
 
-total_timeout = 3
+total_timeout = 2
 termination_conditions = LoggedAnyCondition(
-    GoalCondition(),
+    # GoalCondition(),
     TimeoutCondition(total_timeout / TICK_RATE),
-    # BallTouchedCondition(),
+    BallTouchedCondition(),
     name="Terminations"
 )
 
-no_touch_timeout = 1
+no_touch_timeout = 0.5
 truncation_conditions = LoggedAnyCondition(
     NoTouchTimeoutCondition(no_touch_timeout / TICK_RATE),
     name="Truncations"
@@ -76,7 +82,7 @@ truncation_conditions = LoggedAnyCondition(
 
 simulator = True  # Since the plugin is not implemented, game engine is just empty (Leave it to True)
 rendered = False  # Make sure you got rlviser in the folder
-continue_run = False  # If you did a run already, and you are continuing (make sure to give the run's id)
+continue_run = True  # If you did a run already, and you are continuing (make sure to give the run's id)
 
 
 def create_env():
@@ -103,7 +109,7 @@ if __name__ == "__main__":
     }
 
     if continue_run:
-        run_id = "ldokyvda"  # TODO: change the id to match the last wandb run's id
+        run_id = "ldokyvda"
         wandb_run = wandb.init(
             entity=config["entity"],
             name=config["name"],
@@ -132,7 +138,7 @@ if __name__ == "__main__":
         policy_layer_sizes=(256, 256, 256),
         critic_layer_sizes=(256, 256, 256),
 
-        # checkpoint_load_folder="data/rl_model/-1712845896901723900/28001784",
+        checkpoint_load_folder="data/rl_model/-1712845896901723900/28001784",
         checkpoints_save_folder="data/rl_model/",
         n_proc=n_proc,
         min_inference_size=min_inference_size,

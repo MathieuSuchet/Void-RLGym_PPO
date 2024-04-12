@@ -1,16 +1,13 @@
 import time
 from itertools import chain
 
-import rlviser_py
 from rlgym.api import RLGym
 from rlgym.rocket_league.action_parsers import LookupTableAction, RepeatAction
-from rlgym.rocket_league.api import GameState
 from rlgym.rocket_league.done_conditions import GoalCondition, TimeoutCondition, NoTouchTimeoutCondition
 from rlgym.rocket_league.game import GameEngine
 from rlgym.rocket_league.obs_builders import DefaultObs
 from rlgym.rocket_league.sim import RocketSimEngine, RLViserRenderer
 from rlgym.rocket_league.state_mutators import MutatorSequence, FixedTeamSizeMutator, KickoffMutator
-from rlgym_ppo import Learner
 from rlgym_ppo.ppo import PPOLearner
 from rlgym_ppo.util import RLGymV2GymWrapper
 
