@@ -4,11 +4,11 @@ from typing import Dict, Any, Callable
 
 import filelock
 import numpy as np
-from rlgym.rocket_league.api import GameState
 from rlgym_ppo.util import MetricsLogger
+from rlgym_sim.utils.gamestates import GameState
 from wandb.sdk.wandb_run import Run
 
-from wandb_loggers.global_loggers import WandbMetricsLogger
+from rlgym1_assets.wandb_loggers.global_loggers import WandbMetricsLogger
 
 
 def _add(x: Any, y: Any):
@@ -165,7 +165,7 @@ class Logger(MetricsLogger):
             local_metric_end = []
             while metric_len < metric.shape[0]:
                 len_shape_metrics = int(metric[metric_len])
-                shape_metrics = metric[metric_len:metric_len + len_shape_metrics]
+                shape_metrics = metric[metric_len + 1:metric_len + len_shape_metrics + 1]
 
                 is_metric_atomic = len(shape_metrics) == 0
 
@@ -175,7 +175,7 @@ class Logger(MetricsLogger):
                 local_metric_start.append(metric_len)
                 local_metric_end.append(metric_len + (int(shape_metrics[0]) if not is_metric_atomic else 1))
 
-                metric_len += shape_metrics[0] if not is_metric_atomic else 1
+                metric_len += (shape_metrics[0] + 1) if not is_metric_atomic else 1
 
             metrics_start.append(local_metric_start)
             metrics_end.append(local_metric_end)

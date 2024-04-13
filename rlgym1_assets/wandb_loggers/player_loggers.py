@@ -1,10 +1,10 @@
 from typing import List
 
 import numpy as np
-from rlgym.rocket_league.api import GameState
+from rlgym_sim.utils.gamestates import GameState
 
-from wandb_loggers.global_loggers import WandbMetricsLogger
-from wandb_loggers.logger_utils import _is_on_wall, _is_on_ceiling
+from rlgym1_assets.wandb_loggers.global_loggers import WandbMetricsLogger
+from rlgym1_assets.wandb_loggers.logger_utils import _is_on_wall, _is_on_ceiling
 
 
 def get_all_player_loggers(wall_width_tolerance: float = 100., wall_height_tolerance: float = 100.) -> List[WandbMetricsLogger]:
@@ -34,14 +34,14 @@ class PlayerVelocityLogger(WandbMetricsLogger):
         return ["stats/player/avg_lin_vel", "stats/player/avg_ang_vel"]
 
     def _collect_metrics(self, game_state: GameState) -> np.ndarray:
-        n_cars = len(game_state.cars.values())
+        n_cars = len(game_state.players)
         lin_vel = np.zeros((n_cars, 3))
         ang_vel = np.zeros((n_cars, 3))
 
         for i in range(n_cars):
-            car = list(game_state.cars.values())[i]
-            lin_vel[i] = car.physics.linear_velocity
-            ang_vel[i] = car.physics.angular_velocity
+            car = list(game_state.players)[i]
+            lin_vel[i] = car.car_data.linear_velocity
+            ang_vel[i] = car.car_data.angular_velocity
 
         lin_vel, ang_vel = np.mean(lin_vel, axis=1), np.mean(ang_vel, axis=1)
         lin_vel, ang_vel = np.linalg.norm(lin_vel), np.linalg.norm(ang_vel)
@@ -59,11 +59,11 @@ class PlayerHeightLogger(WandbMetricsLogger):
         return ["stats/player/avg_height"]
 
     def _collect_metrics(self, game_state: GameState) -> np.ndarray:
-        n_cars = len(game_state.cars.keys())
+        n_cars = len(game_state.players)
         heights = np.zeros((n_cars,))
 
-        for i, car in enumerate(game_state.cars.values()):
-            heights[i] = car.physics.position[2]
+        for i, car in enumerate(game_state.players):
+            heights[i] = car.car_data.position[2]
 
         return np.array([np.mean(heights)])
 
@@ -78,10 +78,10 @@ class PlayerBoostLogger(WandbMetricsLogger):
         return ["stats/player/avg_boost_amount"]
 
     def _collect_metrics(self, game_state: GameState) -> np.ndarray:
-        n_cars = len(game_state.cars.keys())
+        n_cars = len(game_state.players)
         boosts = np.zeros((n_cars,))
 
-        for i, car in enumerate(game_state.cars.values()):
+        for i, car in enumerate(game_state.players):
             boosts[i] = car.boost_amount
 
         return np.array([np.mean(boosts)])
@@ -104,17 +104,17 @@ class PlayerFlipTimeLogger(WandbMetricsLogger):
         return ["stats/player/avg_flip_time"]
 
     def _collect_metrics(self, game_state: GameState) -> np.ndarray:
-        times = np.zeros((len(game_state.cars.keys()),))
-        for agent in game_state.cars.keys():
+        times = np.zeros((len(game_state.players),))
+        for agent in game_state.players:
             if agent not in self.time_between_jump_and_flip.keys():
                 self.time_between_jump_and_flip.setdefault(agent, 0)
 
-        for i, (agent, car) in enumerate(game_state.cars.items()):
-            if car.has_jumped and not (car.has_flipped or car.has_double_jumped):
-                self.time_between_jump_and_flip[agent] += 1
+        for i, car in enumerate(game_state.players):
+            if car.has_jump and not car.has_flip:
+                self.time_between_jump_and_flip[car] += 1
             else:
-                times[i] = self.time_between_jump_and_flip[agent]
-                self.time_between_jump_and_flip[agent] = 0
+                times[i] = self.time_between_jump_and_flip[car]
+                self.time_between_jump_and_flip[car] = 0
 
         times = times[np.nonzero(times)]
         if times.size == 0:
@@ -144,18 +144,18 @@ class PlayerWallTimeLogger(WandbMetricsLogger):
         return ["stats/player/avg_wall_time"]
 
     def _collect_metrics(self, game_state: GameState) -> np.ndarray:
-        times = np.zeros((len(game_state.cars.keys()),))
-        for agent in game_state.cars.keys():
+        times = np.zeros((len(game_state.players),))
+        for agent in game_state.players:
             if agent not in self.time_between_wall_and_other.keys():
                 self.time_between_wall_and_other.setdefault(agent, 0)
 
-        for i, (agent, car) in enumerate(game_state.cars.items()):
+        for i, car in enumerate(game_state.players):
             if _is_on_wall(car, wall_width_tolerance=self.wall_width_tolerance,
                            wall_height_tolerance=self.wall_height_tolerance):
-                self.time_between_wall_and_other[agent] += 1
+                self.time_between_wall_and_other[car] += 1
             else:
-                times[i] = self.time_between_wall_and_other[agent]
-                self.time_between_wall_and_other[agent] = 0
+                times[i] = self.time_between_wall_and_other[car]
+                self.time_between_wall_and_other[car] = 0
 
         times = times[np.nonzero(times)]
         if times.size == 0:
@@ -184,13 +184,13 @@ class PlayerWallHeightLogger(WandbMetricsLogger):
         return ["stats/player/avg_wall_height"]
 
     def _collect_metrics(self, game_state: GameState) -> np.ndarray:
-        n_cars = len(game_state.cars.keys())
+        n_cars = len(game_state.players)
         heights = np.zeros((n_cars,))
 
-        for i, car in enumerate(game_state.cars.values()):
+        for i, car in enumerate(game_state.players):
             if _is_on_wall(car, wall_width_tolerance=self.wall_width_tolerance,
                            wall_height_tolerance=self.wall_height_tolerance):
-                heights[i] = car.physics.position[2]
+                heights[i] = car.car_data.position[2]
 
         heights = heights[np.nonzero(heights)]
         if heights.size == 0:
@@ -213,18 +213,18 @@ class PlayerCeilingTimeLogger(WandbMetricsLogger):
         return ["stats/player/avg_ceil_time"]
 
     def _collect_metrics(self, game_state: GameState) -> np.ndarray:
-        times = np.zeros((len(game_state.cars.keys()),))
-        for agent in game_state.cars.keys():
+        times = np.zeros((len(game_state.players),))
+        for agent in game_state.players:
             if agent not in self.time_between_ceil_and_other.keys():
                 self.time_between_ceil_and_other.setdefault(agent, 0)
 
-        for i, (agent, car) in enumerate(game_state.cars.items()):
+        for i, car in enumerate(game_state.players):
             if _is_on_ceiling(car, wall_width_tolerance=self.wall_width_tolerance,
                               wall_height_tolerance=self.wall_height_tolerance):
-                self.time_between_ceil_and_other[agent] += 1
+                self.time_between_ceil_and_other[car] += 1
             else:
-                times[i] = self.time_between_ceil_and_other[agent]
-                self.time_between_ceil_and_other[agent] = 0
+                times[i] = self.time_between_ceil_and_other[car]
+                self.time_between_ceil_and_other[car] = 0
 
         times = times[np.nonzero(times)]
         if times.size == 0:
@@ -249,12 +249,12 @@ class PlayerRelDistToBallLogger(WandbMetricsLogger):
         return ["stats/player/avg_rel_dist_to_ball"]
 
     def _collect_metrics(self, game_state: GameState) -> np.ndarray:
-        n_cars = len(game_state.cars.keys())
+        n_cars = len(game_state.players)
         rel_dists = np.zeros((n_cars, ))
         ball = game_state.ball
 
-        for i, agent in enumerate(game_state.cars.values()):
-            rel_dists[i] = np.linalg.norm(ball.position - agent.physics.position)
+        for i, agent in enumerate(game_state.players):
+            rel_dists[i] = np.linalg.norm(ball.position - agent.car_data.position)
 
         return np.array([np.mean(rel_dists)])
 
@@ -269,13 +269,13 @@ class PlayerRelVelToBallLogger(WandbMetricsLogger):
         return ["stats/player/avg_rel_vel_to_ball"]
 
     def _collect_metrics(self, game_state: GameState) -> np.ndarray:
-        n_cars = len(game_state.cars.keys())
+        n_cars = len(game_state.players)
         rel_vel = np.zeros((n_cars,))
         ball = game_state.ball
 
-        for i, agent in enumerate(game_state.cars.values()):
-            rel_dist = ball.position - agent.physics.position
-            player_vel = agent.physics.linear_velocity
+        for i, agent in enumerate(game_state.players):
+            rel_dist = ball.position - agent.car_data.position
+            player_vel = agent.car_data.linear_velocity
             ball_vel = ball.linear_velocity
             rel_vel[i] = np.dot(player_vel - ball_vel, rel_dist / np.linalg.norm(rel_dist))
 
@@ -294,18 +294,22 @@ class PlayerDistanceToOthersLogger(WandbMetricsLogger):
         return ["stats/player/avg_dist_to_allies", "stats/player/avg_dist_to_opp", "stats/player/avg_dist_to_others"]
 
     def _collect_metrics(self, game_state: GameState) -> np.ndarray:
-        n_cars = len(game_state.cars.keys())
-        dist_to_allies = dist_to_opp = dist_to_all = np.zeros((n_cars - 1, ))
+        n_cars = len(game_state.players)
+        dist_to_allies = np.zeros((n_cars, ))
+        dist_to_opp = np.zeros((n_cars, ))
+        dist_to_all = np.zeros((n_cars, ))
 
-        for i, agent in enumerate(game_state.cars.keys()):
-            dta = dto = dtall = []
-            agent_car = game_state.cars[agent]
-            for other in game_state.cars.keys():
+        for i, agent in enumerate(game_state.players):
+            dta = []
+            dto = []
+            dtall = []
+            agent_car = game_state.players[i]
+            for j, other in enumerate(game_state.players):
                 if agent == other:
                     continue
 
-                other_car = game_state.cars[other]
-                dist_to_other = np.linalg.norm(other_car.physics.position - agent_car.physics.position)
+                other_car = game_state.players[j]
+                dist_to_other = np.linalg.norm(other_car.car_data.position - agent_car.car_data.position)
                 if agent_car.team_num != other_car.team_num:
                     dto.append(dist_to_other)
                 else:
@@ -314,10 +318,10 @@ class PlayerDistanceToOthersLogger(WandbMetricsLogger):
 
             dist_to_allies[i] = np.mean(dta)
             dist_to_opp[i] = np.mean(dto)
-            dist_to_allies[i] = np.mean(dtall)
+            dist_to_all[i] = np.mean(dtall)
 
         dist_to_allies = dist_to_allies[np.nonzero(dist_to_allies)]
         dist_to_opp = dist_to_opp[np.nonzero(dist_to_opp)]
         dist_to_all = dist_to_all[np.nonzero(dist_to_all)]
 
-        return np.array([dist_to_allies, dist_to_opp, dist_to_all])
+        return np.array([np.mean(dist_to_allies), np.mean(dist_to_opp), np.mean(dist_to_all)])

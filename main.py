@@ -1,30 +1,26 @@
-from rlgym.api import RLGym
-from rlgym.rocket_league.action_parsers import RepeatAction, LookupTableAction
-from rlgym.rocket_league.done_conditions import TimeoutCondition, NoTouchTimeoutCondition
-from rlgym.rocket_league.game.game_engine import GameEngine
-from rlgym.rocket_league.obs_builders.default_obs import DefaultObs
-from rlgym.rocket_league.sim import RLViserRenderer
-from rlgym.rocket_league.sim.rocketsim_engine import RocketSimEngine
-from rlgym.rocket_league.state_mutators import MutatorSequence, KickoffMutator, FixedTeamSizeMutator
+import rlgym_sim
 from rlgym_ppo import Learner
-from rlgym_ppo.util import RLGymV2GymWrapper
+from rlgym_sim.utils.obs_builders import AdvancedObs
+from rlgym_sim.utils.reward_functions.common_rewards import EventReward, VelocityBallToGoalReward, \
+    LiuDistancePlayerToBallReward, FaceBallReward
+from rlgym_sim.utils.terminal_conditions.common_conditions import TimeoutCondition, BallTouchedCondition
+from rlgym_tools.extra_state_setters.weighted_sample_setter import WeightedSampleSetter
 
 import wandb
-from action_parsers import WandbActionParser
-from done_conditions import LoggedAnyCondition, BallTouchedCondition
 from logger import Logger
-from rewards import LoggerCombinedReward, VelBallToGoalReward, LiuDistancePlayerToBallReward, EventReward, \
-    FaceBallReward
-from state_mutators import RandomStateMutator, ShotMutator, WeightedStateMutator
-from wandb_loggers.ball_loggers import get_all_ball_loggers
-from wandb_loggers.global_loggers import get_all_global_loggers
-from wandb_loggers.player_loggers import get_all_player_loggers
+from rlgym1_assets.action_parsers.action_parsers import WandbActionParser, LookupAction
+from rlgym1_assets.rewards.rewards import LoggerCombinedReward
+from rlgym1_assets.state_mutators.state_mutators import DefaultState, ShotState
+from rlgym1_assets.terminal_conditions.multi_condition import MultiLoggedCondition
+from rlgym1_assets.wandb_loggers.ball_loggers import get_all_ball_loggers
+from rlgym1_assets.wandb_loggers.global_loggers import get_all_global_loggers
+from rlgym1_assets.wandb_loggers.player_loggers import get_all_player_loggers
 
 TICK_RATE = 1. / 120.
 tick_skip = 8
 
-n_proc = 10
-ts_per_iteration = 200_000
+n_proc = 1
+ts_per_iteration = 10_000
 timestep_limit = ts_per_iteration * 10_000
 ppo_batch_size = ts_per_iteration // 2
 n_epochs = 10
@@ -33,27 +29,29 @@ ppo_minibatch_size = ppo_batch_size // n_epochs
 # Aech's rlgym_v2 example's approximation
 min_inference_size = max(1, int(round(n_proc * 0.9)))
 
-blue_count = orange_count = 3
+spawn_opponents = True
+blue_count = 3
+orange_count = 3 if spawn_opponents else False
 
-state_mutator = MutatorSequence(
-    FixedTeamSizeMutator(blue_count, orange_count),
-    WeightedStateMutator(
-        KickoffMutator(),
-        RandomStateMutator(),
-        ShotMutator()
-    ))
-action_parser = WandbActionParser(RepeatAction(LookupTableAction(), repeats=tick_skip))
-obs_builder = DefaultObs()
+state_mutator = WeightedSampleSetter(
+    state_setters=(
+        DefaultState(),
+        ShotState()
+    ),
+    weights=(1, 1)
+)
+action_parser = WandbActionParser(LookupAction())
+obs_builder = AdvancedObs()
 reward_fn = LoggerCombinedReward(
     EventReward(
-        goal_w=1,
-        concede_w=-1,
-        touch_w=.01,
-        shot_w=.1,
-        save_w=.1
+        goal=1,
+        concede=-1,
+        touch=.01,
+        shot=.1,
+        save=.1
     ),
     (
-        VelBallToGoalReward(),
+        VelocityBallToGoalReward(),
         .1
     ),
     (
@@ -67,38 +65,29 @@ reward_fn = LoggerCombinedReward(
 )
 
 total_timeout = 2
-termination_conditions = LoggedAnyCondition(
+termination_conditions = [MultiLoggedCondition(
     # GoalCondition(),
-    TimeoutCondition(total_timeout / TICK_RATE),
-    BallTouchedCondition(),
-    name="Terminations"
-)
+    TimeoutCondition(int(total_timeout / TICK_RATE)),
+    BallTouchedCondition()
+)]
 
-no_touch_timeout = 0.5
-truncation_conditions = LoggedAnyCondition(
-    NoTouchTimeoutCondition(no_touch_timeout / TICK_RATE),
-    name="Truncations"
-)
-
-simulator = True  # Since the plugin is not implemented, game engine is just empty (Leave it to True)
-rendered = False  # Make sure you got rlviser in the folder
-continue_run = True  # If you did a run already, and you are continuing (make sure to give the run's id)
+rendered = False
+continue_run = False  # If you did a run already, and you are continuing (make sure to give the run's id)
 
 
 def create_env():
-    rlgym_env = RLGym(
-        state_mutator=state_mutator,
+    rlgym_env = rlgym_sim.make(
+        state_setter=state_mutator,
         action_parser=action_parser,
         obs_builder=obs_builder,
         reward_fn=reward_fn,
-        termination_cond=termination_conditions,
-        truncation_cond=truncation_conditions,
-
-        transition_engine=RocketSimEngine() if simulator else GameEngine(),
-        renderer=RLViserRenderer() if rendered else None
+        terminal_conditions=termination_conditions,
+        tick_skip=tick_skip,
+        team_size=blue_count,
+        spawn_opponents=True,
     )
 
-    return RLGymV2GymWrapper(rlgym_env)
+    return rlgym_env
 
 
 if __name__ == "__main__":
@@ -138,7 +127,7 @@ if __name__ == "__main__":
         policy_layer_sizes=(256, 256, 256),
         critic_layer_sizes=(256, 256, 256),
 
-        checkpoint_load_folder="data/rl_model/-1712845896901723900/28001784",
+        # checkpoint_load_folder="data/rl_model/-1712845896901723900/28001784",
         checkpoints_save_folder="data/rl_model/",
         n_proc=n_proc,
         min_inference_size=min_inference_size,

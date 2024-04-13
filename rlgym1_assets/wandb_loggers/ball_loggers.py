@@ -1,8 +1,9 @@
 from typing import List
 
 import numpy as np
-from rlgym.rocket_league.api import GameState
-from wandb_loggers.global_loggers import WandbMetricsLogger
+from rlgym_sim.utils.gamestates import GameState
+
+from rlgym1_assets.wandb_loggers.global_loggers import WandbMetricsLogger
 
 
 def get_all_ball_loggers():
@@ -57,8 +58,8 @@ class BallAccelerationLogger(WandbMetricsLogger):
     def _collect_metrics(self, game_state: GameState) -> np.ndarray:
         lin_accel = ang_accel = 0
 
-        for agent in game_state.cars.keys():
-            if game_state.cars[agent].ball_touches > 0:
+        for i in range(len(game_state.players)):
+            if game_state.players[i].ball_touched:
                 lin_accel = np.linalg.norm(game_state.ball.linear_velocity - self.last_lin_vel)
                 ang_accel = np.linalg.norm(game_state.ball.angular_velocity - self.last_ang_vel)
 

@@ -1,40 +1,47 @@
 import time
-from itertools import chain
 
-from rlgym.api import RLGym
-from rlgym.rocket_league.action_parsers import LookupTableAction, RepeatAction
-from rlgym.rocket_league.done_conditions import GoalCondition, TimeoutCondition, NoTouchTimeoutCondition
-from rlgym.rocket_league.game import GameEngine
-from rlgym.rocket_league.obs_builders import DefaultObs
-from rlgym.rocket_league.sim import RocketSimEngine, RLViserRenderer
-from rlgym.rocket_league.state_mutators import MutatorSequence, FixedTeamSizeMutator, KickoffMutator
+from rlgym import make
+from rlgym.gamelaunch import LaunchPreference
 from rlgym_ppo.ppo import PPOLearner
-from rlgym_ppo.util import RLGymV2GymWrapper
+from rlgym_sim.utils.obs_builders import AdvancedObs
+from rlgym_sim.utils.reward_functions.common_rewards import VelocityBallToGoalReward, EventReward, \
+    LiuDistancePlayerToBallReward, FaceBallReward
+from rlgym_sim.utils.terminal_conditions.common_conditions import TimeoutCondition, BallTouchedCondition
+from rlgym_tools.extra_state_setters.weighted_sample_setter import WeightedSampleSetter
 
-from action_parsers import WandbActionParser
-from done_conditions import LoggedAnyCondition
-from rewards import LoggerCombinedReward, EventReward, VelBallToGoalReward, LiuDistancePlayerToBallReward, \
-    FaceBallReward
-from state_mutators import WeightedStateMutator
+from rlgym1_assets.action_parsers.action_parsers import WandbActionParser, LookupAction
+from rlgym1_assets.rewards.rewards import LoggerCombinedReward
+from rlgym1_assets.state_mutators.state_mutators import DefaultState, ShotState
+from rlgym1_assets.terminal_conditions.multi_condition import MultiLoggedCondition
 
 TICK_RATE = 1. / 120.
 tick_skip = 8
 
 blue_count = orange_count = 3
 
-state_mutator = MutatorSequence(FixedTeamSizeMutator(blue_count, orange_count), WeightedStateMutator(KickoffMutator()))
-action_parser = WandbActionParser(RepeatAction(LookupTableAction(), repeats=tick_skip))
-obs_builder = DefaultObs()
+spawn_opponents = True
+blue_count = 3
+orange_count = 3 if spawn_opponents else False
+
+state_mutator = WeightedSampleSetter(
+    state_setters=(
+        DefaultState(),
+        ShotState()
+    ),
+    weights=(1, 1)
+)
+action_parser = WandbActionParser(LookupAction())
+obs_builder = AdvancedObs()
 reward_fn = LoggerCombinedReward(
     EventReward(
-        goal_w=1,
-        concede_w=-1,
-        touch_w=.01,
-        shot_w=.1,
-        save_w=.1
+        goal=1,
+        concede=-1,
+        touch=.01,
+        shot=.1,
+        save=.1
     ),
     (
-        VelBallToGoalReward(),
+        VelocityBallToGoalReward(),
         .1
     ),
     (
@@ -47,47 +54,38 @@ reward_fn = LoggerCombinedReward(
     )
 )
 
-total_timeout = 3
-termination_conditions = LoggedAnyCondition(
-    GoalCondition(),
-    TimeoutCondition(total_timeout / TICK_RATE),
-    # BallTouchedCondition(),
-    name="Terminations"
-)
-
-no_touch_timeout = 1
-truncation_conditions = LoggedAnyCondition(
-    NoTouchTimeoutCondition(no_touch_timeout / TICK_RATE),
-    name="Truncations"
-)
-
-simulator = True  # Since the plugin is not implemented, game engine is just empty (Leave it to True)
+total_timeout = 2
+termination_conditions = [MultiLoggedCondition(
+    # GoalCondition(),
+    TimeoutCondition(int(total_timeout / TICK_RATE)),
+    BallTouchedCondition()
+)]
 deterministic = False
 
 model_to_load = "data/rl_model/-1712845896901723900/28001784"
 
 
 def create_env():
-    rlgym_env = RLGym(
-        state_mutator=state_mutator,
+    rlgym_env = make(
+        state_setter=state_mutator,
         action_parser=action_parser,
         obs_builder=obs_builder,
         reward_fn=reward_fn,
-        termination_cond=termination_conditions,
-        truncation_cond=truncation_conditions,
+        terminal_conditions=termination_conditions,
+        tick_skip=tick_skip,
+        team_size=blue_count,
+        spawn_opponents=spawn_opponents,
+        game_speed=1,
+        launch_preference=LaunchPreference.STEAM)
 
-        transition_engine=RocketSimEngine() if simulator else GameEngine(),
-        renderer=RLViserRenderer()
-    )
-
-    return RLGymV2GymWrapper(rlgym_env)
+    return rlgym_env
 
 
 if __name__ == "__main__":
 
     agent = PPOLearner(
-            obs_builder.get_obs_space('blue-0'),
-            action_parser.get_action_space('blue-0'),
+            231,
+            90,
             device="cuda",
             batch_size=10_000,
             mini_batch_size=1_000,
@@ -106,19 +104,16 @@ if __name__ == "__main__":
     env = create_env()
 
     while True:
-        obs_dict = env.reset()
+        obs = env.reset()
         steps = 0
         t0 = time.time()
         while True:
-            env.render()
-            time.sleep(6 / 120)
+            actions, _ = agent.policy.get_action(obs, deterministic)
+            actions = actions.detach().numpy().reshape((actions.shape, 1))
 
-            actions, _ = agent.policy.get_action(obs_dict, deterministic)
-            actions = actions.detach().numpy().reshape((actions.shape[0], 1))
-
-            obs_dict, reward_dict, terminated_dict, truncated_dict = env.step(actions)
+            obs, reward, terminated, info = env.step(actions)
 
             steps += 1
 
-            if any(chain(terminated_dict.values(), truncated_dict.values())):
-                break
+            if terminated:
+                obs = env.reset()
