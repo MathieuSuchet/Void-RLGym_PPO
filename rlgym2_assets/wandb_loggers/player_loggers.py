@@ -1,7 +1,11 @@
+"""
+Contains all loggers related to the player
+"""
 from typing import List
 
 import numpy as np
 from rlgym.rocket_league.api import GameState
+from rlgym.rocket_league.common_values import SUPERSONIC_THRESHOLD
 
 from rlgym2_assets.wandb_loggers.global_loggers import WandbMetricsLogger
 from rlgym2_assets.wandb_loggers.logger_utils import _is_on_wall, _is_on_ceiling
@@ -321,3 +325,28 @@ class PlayerDistanceToOthersLogger(WandbMetricsLogger):
         dist_to_all = dist_to_all[np.nonzero(dist_to_all)]
 
         return np.array([dist_to_allies, dist_to_opp, dist_to_all])
+
+
+class PlayerSupersonicTimeLogger(WandbMetricsLogger):
+    """
+    Logs :\n
+    Player's supersonic time
+    """
+    def __init__(self):
+        self.supersonic_time = {}
+
+    @property
+    def metrics(self) -> List[str]:
+        return ["stats/player/supersonic_time"]
+
+    def _collect_metrics(self, game_state: GameState) -> np.ndarray:
+        for agent, player in game_state.cars.items():
+            if agent not in self.supersonic_time:
+                self.supersonic_time.setdefault(agent, 0)
+
+            if np.linalg.norm(player.physics.linear_velocity) >= SUPERSONIC_THRESHOLD:
+                self.supersonic_time[agent] += 1
+            else:
+                self.supersonic_time[agent] = 0
+
+        return np.array([np.mean(list(self.supersonic_time.values()))])

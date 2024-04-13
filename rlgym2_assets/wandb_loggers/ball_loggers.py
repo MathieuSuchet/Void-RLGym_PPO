@@ -1,3 +1,6 @@
+"""
+Utils methods used in the loggers
+"""
 from typing import List
 
 import numpy as np

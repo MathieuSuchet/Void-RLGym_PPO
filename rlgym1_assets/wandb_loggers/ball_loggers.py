@@ -1,3 +1,6 @@
+"""
+Contains all loggers related to the ball
+"""
 from typing import List
 
 import numpy as np
@@ -7,6 +10,10 @@ from rlgym1_assets.wandb_loggers.global_loggers import WandbMetricsLogger
 
 
 def get_all_ball_loggers():
+    """
+    Get all the loggers related to the ball
+    :return: All the loggers related to the ball
+    """
     return [
         BallHeightLogger(),
         BallVelocityLogger(),
@@ -47,6 +54,11 @@ class BallVelocityLogger(WandbMetricsLogger):
 
 
 class BallAccelerationLogger(WandbMetricsLogger):
+    """
+    Logs :\n
+    The ball's linear acceleration (on touch)\n
+    The ball's angular acceleration (on touch)
+    """
     def __init__(self):
         self.last_lin_vel = np.array([0, 0, 0])
         self.last_ang_vel = np.array([0, 0, 0])

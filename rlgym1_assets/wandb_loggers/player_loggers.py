@@ -1,13 +1,18 @@
+"""
+Contains all loggers related to the player
+"""
 from typing import List
 
 import numpy as np
+from rlgym_sim.utils.common_values import SUPERSONIC_THRESHOLD
 from rlgym_sim.utils.gamestates import GameState
 
 from rlgym1_assets.wandb_loggers.global_loggers import WandbMetricsLogger
 from rlgym1_assets.wandb_loggers.logger_utils import _is_on_wall, _is_on_ceiling
 
 
-def get_all_player_loggers(wall_width_tolerance: float = 100., wall_height_tolerance: float = 100.) -> List[WandbMetricsLogger]:
+def get_all_player_loggers(wall_width_tolerance: float = 100., wall_height_tolerance: float = 100.) -> List[
+    WandbMetricsLogger]:
     return [
         PlayerVelocityLogger(),
         PlayerHeightLogger(),
@@ -54,6 +59,7 @@ class PlayerHeightLogger(WandbMetricsLogger):
     Logs :\n
     Player's average height
     """
+
     @property
     def metrics(self) -> List[str]:
         return ["stats/player/avg_height"]
@@ -73,6 +79,7 @@ class PlayerBoostLogger(WandbMetricsLogger):
     Logs :\n
     Player's average boost
     """
+
     @property
     def metrics(self) -> List[str]:
         return ["stats/player/avg_boost_amount"]
@@ -96,6 +103,7 @@ class PlayerFlipTimeLogger(WandbMetricsLogger):
     Logs :\n
     Average time before flipping/double jumping
     """
+
     def __init__(self):
         self.time_between_jump_and_flip = {}
 
@@ -175,6 +183,7 @@ class PlayerWallHeightLogger(WandbMetricsLogger):
     Logs :\n
     Average player height (when on wall)
     """
+
     def __init__(self, wall_width_tolerance: float = 100, wall_height_tolerance: float = 100):
         self.wall_width_tolerance = wall_width_tolerance
         self.wall_height_tolerance = wall_height_tolerance
@@ -203,6 +212,7 @@ class PlayerCeilingTimeLogger(WandbMetricsLogger):
     Logs :\n
     Average ceiling time
     """
+
     def __init__(self, wall_width_tolerance: float = 100, wall_height_tolerance: float = 100):
         self.wall_width_tolerance = wall_width_tolerance
         self.wall_height_tolerance = wall_height_tolerance
@@ -244,13 +254,14 @@ class PlayerRelDistToBallLogger(WandbMetricsLogger):
     Logs :\n
     Average relative distance to ball
     """
+
     @property
     def metrics(self) -> List[str]:
         return ["stats/player/avg_rel_dist_to_ball"]
 
     def _collect_metrics(self, game_state: GameState) -> np.ndarray:
         n_cars = len(game_state.players)
-        rel_dists = np.zeros((n_cars, ))
+        rel_dists = np.zeros((n_cars,))
         ball = game_state.ball
 
         for i, agent in enumerate(game_state.players):
@@ -264,6 +275,7 @@ class PlayerRelVelToBallLogger(WandbMetricsLogger):
     Logs :\n
     Average relative velocity to ball
     """
+
     @property
     def metrics(self) -> List[str]:
         return ["stats/player/avg_rel_vel_to_ball"]
@@ -289,15 +301,16 @@ class PlayerDistanceToOthersLogger(WandbMetricsLogger):
     Average player distance to opponents\n
     Average player distance to all
     """
+
     @property
     def metrics(self) -> List[str]:
         return ["stats/player/avg_dist_to_allies", "stats/player/avg_dist_to_opp", "stats/player/avg_dist_to_others"]
 
     def _collect_metrics(self, game_state: GameState) -> np.ndarray:
         n_cars = len(game_state.players)
-        dist_to_allies = np.zeros((n_cars, ))
-        dist_to_opp = np.zeros((n_cars, ))
-        dist_to_all = np.zeros((n_cars, ))
+        dist_to_allies = np.zeros((n_cars,))
+        dist_to_opp = np.zeros((n_cars,))
+        dist_to_all = np.zeros((n_cars,))
 
         for i, agent in enumerate(game_state.players):
             dta = []
@@ -325,3 +338,28 @@ class PlayerDistanceToOthersLogger(WandbMetricsLogger):
         dist_to_all = dist_to_all[np.nonzero(dist_to_all)]
 
         return np.array([np.mean(dist_to_allies), np.mean(dist_to_opp), np.mean(dist_to_all)])
+
+
+class PlayerSupersonicTimeLogger(WandbMetricsLogger):
+    """
+    Logs :\n
+    Player's supersonic time
+    """
+    def __init__(self):
+        self.supersonic_time = {}
+
+    @property
+    def metrics(self) -> List[str]:
+        return ["stats/player/supersonic_time"]
+
+    def _collect_metrics(self, game_state: GameState) -> np.ndarray:
+        for player in game_state.players:
+            if player.car_id not in self.supersonic_time:
+                self.supersonic_time.setdefault(player.car_id, 0)
+
+            if np.linalg.norm(player.car_data.linear_velocity) >= SUPERSONIC_THRESHOLD:
+                self.supersonic_time[player.car_id] += 1
+            else:
+                self.supersonic_time[player.car_id] = 0
+
+        return np.array([np.mean(list(self.supersonic_time.values()))])

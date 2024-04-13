@@ -11,7 +11,15 @@ import gym
 
 
 class WandbActionParser(ActionParser):
+    """
+    Parser that registers another parser's bins and logs it to wandb
+    """
     def __init__(self, action_parser: ActionParser, log_frequency: int = 15_000):
+        """
+        Parser that registers another parser's bins and logs it to wandb
+        :param action_parser: Agent's action parser
+        :param log_frequency: Step frequency, lower = more precise but more lags
+        """
         super().__init__()
         self.parser = action_parser
         self.logger = Logger()

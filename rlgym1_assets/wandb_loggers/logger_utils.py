@@ -1,3 +1,6 @@
+"""
+Utils methods used in the loggers
+"""
 from rlgym_sim.utils.common_values import SIDE_WALL_X, BACK_WALL_Y, CEILING_Z, BALL_RADIUS
 from rlgym_sim.utils.gamestates import PlayerData, PhysicsObject
 

@@ -1,3 +1,6 @@
+"""
+Utils methods used in the loggers
+"""
 from rlgym.rocket_league.api import Car
 from rlgym.rocket_league.common_values import SIDE_WALL_X, BACK_WALL_Y, CEILING_Z
 

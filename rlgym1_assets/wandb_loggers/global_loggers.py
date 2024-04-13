@@ -1,3 +1,6 @@
+"""
+Contains all loggers related to global stats
+"""
 from typing import List
 
 import numpy as np
