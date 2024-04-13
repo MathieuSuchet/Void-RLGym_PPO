@@ -110,7 +110,7 @@ class PlayerFlipTimeLogger(WandbMetricsLogger):
                 self.time_between_jump_and_flip.setdefault(agent, 0)
 
         for i, car in enumerate(game_state.players):
-            if car.has_jump and not car.has_flip:
+            if car.has_flip and not car.has_jump:
                 self.time_between_jump_and_flip[car] += 1
             else:
                 times[i] = self.time_between_jump_and_flip[car]
