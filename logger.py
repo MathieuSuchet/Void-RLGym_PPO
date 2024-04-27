@@ -132,7 +132,6 @@ class Logger(MetricsLogger):
         data = []
         for logger in self.loggers.keys():
             data.append(logger.collect_metrics(game_state))
-
         return data
 
     def _compute_data(self, data: Dict[str, Any]):
@@ -188,7 +187,7 @@ class Logger(MetricsLogger):
                 logger = list(self.loggers.keys())[i]
 
                 self.loggers[list(self.loggers.keys())[i]].append(
-                     logger.compute_data(np.array([metric_data[i][start:end] for metric_data in metrics_data])))
+                    logger.compute_data(np.array([metric_data[i][start:end] for metric_data in metrics_data])))
 
         for logger in self.loggers.keys():
             for i, m in enumerate(logger.metrics):

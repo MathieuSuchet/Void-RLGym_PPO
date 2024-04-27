@@ -84,8 +84,8 @@ def create_env():
 if __name__ == "__main__":
 
     agent = PPOLearner(
-            231,
-            90,
+            obs_space_size=231,
+            act_space_size=action_parser.get_action_space().n,
             device="cuda",
             batch_size=10_000,
             mini_batch_size=1_000,

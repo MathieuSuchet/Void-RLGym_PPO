@@ -1,3 +1,5 @@
+import pickle
+
 import rlgym_sim
 from rlgym_ppo import Learner
 from rlgym_sim.utils.obs_builders import AdvancedObs
@@ -9,8 +11,8 @@ from rlgym_tools.extra_state_setters.weighted_sample_setter import WeightedSampl
 import wandb
 from logger import Logger
 from rlgym1_assets.action_parsers.action_parsers import WandbActionParser, LookupAction
-from rlgym1_assets.rewards.rewards import LoggerCombinedReward
-from rlgym1_assets.state_mutators.state_mutators import DefaultState, ShotState
+from rlgym1_assets.rewards.rewards import LoggerCombinedReward, FlipResetReward
+from rlgym1_assets.state_mutators.state_mutators import DefaultState, ShotState, DynamicScoredReplaySetter
 from rlgym1_assets.terminal_conditions.multi_condition import MultiLoggedCondition
 from rlgym1_assets.wandb_loggers.ball_loggers import get_all_ball_loggers
 from rlgym1_assets.wandb_loggers.global_loggers import get_all_global_loggers
@@ -19,8 +21,8 @@ from rlgym1_assets.wandb_loggers.player_loggers import get_all_player_loggers
 TICK_RATE = 1. / 120.
 tick_skip = 8
 
-n_proc = 1
-ts_per_iteration = 10_000
+n_proc = 10
+ts_per_iteration = 100_000
 timestep_limit = ts_per_iteration * 10_000
 ppo_batch_size = ts_per_iteration // 2
 n_epochs = 10
@@ -31,15 +33,14 @@ min_inference_size = max(1, int(round(n_proc * 0.9)))
 
 spawn_opponents = True
 blue_count = 3
-orange_count = 3 if spawn_opponents else False
+orange_count = 3 if spawn_opponents else 0
 
-state_mutator = WeightedSampleSetter(
-    state_setters=(
-        DefaultState(),
-        ShotState()
-    ),
-    weights=(1, 1)
-)
+logger = Logger(
+        *get_all_global_loggers(),
+        *get_all_ball_loggers(),
+        *get_all_player_loggers()
+    )
+
 action_parser = WandbActionParser(LookupAction())
 obs_builder = AdvancedObs()
 reward_fn = LoggerCombinedReward(
@@ -61,6 +62,10 @@ reward_fn = LoggerCombinedReward(
     (
         FaceBallReward(),
         .1
+    ),
+    (
+        FlipResetReward(),
+        .1
     )
 )
 
@@ -76,6 +81,19 @@ continue_run = False  # If you did a run already, and you are continuing (make s
 
 
 def create_env():
+
+    with open("tmp/replay_setter", "rb") as f:
+        dynamic_replay_setter = pickle.load(f)
+
+    state_mutator = WeightedSampleSetter(
+        state_setters=(
+            DefaultState(),
+            ShotState(),
+            dynamic_replay_setter,
+        ),
+        weights=(1, 1, 1)
+    )
+
     rlgym_env = rlgym_sim.make(
         state_setter=state_mutator,
         action_parser=action_parser,
@@ -84,17 +102,27 @@ def create_env():
         terminal_conditions=termination_conditions,
         tick_skip=tick_skip,
         team_size=blue_count,
-        spawn_opponents=True,
+        spawn_opponents=spawn_opponents,
     )
 
     return rlgym_env
 
 
 if __name__ == "__main__":
+
+    dynamic_replay_setter = DynamicScoredReplaySetter(
+                "replays/states_scores_duels.npz",
+                "replays/states_scores_doubles.npz",
+                "replays/states_scores_standard.npz"
+            )
+
+    with open("tmp/replay_setter", "wb") as f:
+        pickle.dump(dynamic_replay_setter, f)
+
     config = {
-        "project": "rlgym_ppo_tests",
-        "entity": "cryy_salt",
-        "name": "logger_run"
+        "project": "void",
+        "entity": "madaos",
+        "name": "void"
     }
 
     if continue_run:
@@ -107,12 +135,6 @@ if __name__ == "__main__":
             id=run_id)
     else:
         wandb_run = None
-
-    logger = Logger(
-        *get_all_global_loggers(),
-        *get_all_ball_loggers(),
-        *get_all_player_loggers()
-    )
 
     agent = Learner(
         env_create_function=create_env,
@@ -145,5 +167,7 @@ if __name__ == "__main__":
 
         device="cuda"
     )
+
+    dynamic_replay_setter.load_replays()
 
     agent.learn()

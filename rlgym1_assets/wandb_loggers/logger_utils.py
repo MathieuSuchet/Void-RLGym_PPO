@@ -1,14 +1,15 @@
 """
 Utils methods used in the loggers
 """
-from rlgym_sim.utils.common_values import SIDE_WALL_X, BACK_WALL_Y, CEILING_Z, BALL_RADIUS
-from rlgym_sim.utils.gamestates import PlayerData, PhysicsObject
+from rlgym_sim.utils.common_values import SIDE_WALL_X, BACK_WALL_Y, CEILING_Z
+from rlgym_sim.utils.gamestates import PlayerData, GameState
+from rlgym_sim.utils.terminal_conditions.common_conditions import GoalScoredCondition
 
 X_AT_ZERO = 8064
 
 
-def _is_goal_scored(ball: PhysicsObject):
-    return abs(ball.position[1]) > BACK_WALL_Y + BALL_RADIUS
+def _is_goal_scored(state: GameState):
+    return GoalScoredCondition().is_terminal(state)
 
 
 def _is_on_wall(car: PlayerData, wall_width_tolerance: float = 100., wall_height_tolerance: float = 100.) -> bool:

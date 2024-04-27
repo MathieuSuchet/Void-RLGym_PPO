@@ -9,6 +9,8 @@ from rlgym_sim.utils.gamestates import PlayerData, GameState
 from rlgym_sim.utils.reward_functions.common_rewards import VelocityPlayerToBallReward
 
 from logger import _add, Logger
+from rlgym1_assets.wandb_loggers.global_loggers import FlipResetLogger
+from rlgym1_assets.wandb_loggers.player_loggers import TouchForceLogger, PlayerSupersonicTimeLogger
 
 
 class LoggerCombinedReward(RewardFunction):
@@ -65,6 +67,87 @@ class LoggerCombinedReward(RewardFunction):
         ]
 
         return float(np.dot(self.weights, rewards))
+
+
+class EnhancedEventReward(RewardFunction):
+
+    def __init__(
+            self,
+            goal_w: float,
+            team_goal_w: float,
+            concede_w: float,
+            touch_w: float,
+            shot_w: float,
+            save_w: float,
+            demo_w: float,
+            flip_reset_w: float,
+    ):
+        """
+        Rewards when events occur
+        :param goal_w: Weight of goal event
+        :param team_goal_w: Weight of team goal event
+        :param concede_w: Weight of goal concede event
+        :param touch_w: Weight of touch event
+        :param shot_w: Weight of shot event
+        :param save_w: Weight of save event
+        :param demo_w: Weight of demo event
+        :param flip_reset_w: Weight of demo event
+        """
+        self.weights = np.array([goal_w, team_goal_w, concede_w, touch_w, shot_w, save_w, demo_w,
+                                 flip_reset_w])
+
+    def get_reward(self, player: PlayerData, state: GameState, previous_action: np.ndarray) -> float:
+        return np.dot(np.array(self._extract_values(player, state)), self.weights)
+
+    def _extract_values(self, player: PlayerData, state: GameState):
+        if player.team_num == BLUE_TEAM:
+            team, opponent = state.blue_score, state.orange_score
+        else:
+            team, opponent = state.orange_score, state.blue_score
+
+        return np.array([player.match_goals, team, opponent, player.ball_touched, player.match_shots,
+                         player.match_saves, player.match_demolishes])
+
+
+class TouchForceReward(RewardFunction):
+    def reset(self, initial_state: GameState):
+        pass
+
+    def __init__(self, force_threshold: float = 1):
+        """
+        Rewards hard touches
+        :param force_threshold: Minimum threshold to trigger (kph)
+        """
+        self.force_threshold = force_threshold
+        self.touch_force_logger = TouchForceLogger(standalone_mode=True)
+
+    def get_reward(self, player: PlayerData, state: GameState, previous_action: np.ndarray) -> float:
+        metric = self.touch_force_logger.collect_metrics(state, player.car_id)
+        return metric / BALL_MAX_SPEED if metric * 0.036 > self.force_threshold else 0
+
+
+class SupersonicReward(RewardFunction):
+    def __init__(self):
+        self.logger = PlayerSupersonicTimeLogger(standalone_mode=True)
+
+    def reset(self, initial_state: GameState):
+        pass
+
+    def get_reward(self, player: PlayerData, state: GameState, previous_action: np.ndarray) -> float:
+        metric = self.logger.collect_metrics(state, player.car_id)
+        return 1 if metric > 0 else 0
+
+
+class FlipResetReward(RewardFunction):
+    def __init__(self):
+        self.flip_reset_logger = FlipResetLogger(standalone_mode=True)
+
+    def reset(self, initial_state: GameState):
+        pass
+
+    def get_reward(self, player: PlayerData, state: GameState, previous_action: np.ndarray) -> float:
+        has_reset = self.flip_reset_logger.collect_metrics(state, player.car_id)
+        return int(has_reset)  # 0 = False, 1 = True
 
 
 class BumpReward(RewardFunction):
