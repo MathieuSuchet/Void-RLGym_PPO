@@ -6,13 +6,15 @@ from rlgym_sim.utils.obs_builders import AdvancedObs
 from rlgym_sim.utils.reward_functions.common_rewards import EventReward, VelocityBallToGoalReward, \
     LiuDistancePlayerToBallReward, FaceBallReward
 from rlgym_sim.utils.terminal_conditions.common_conditions import TimeoutCondition, BallTouchedCondition
+from rlgym_tools.extra_obs.advanced_padder import AdvancedObsPadder
 from rlgym_tools.extra_state_setters.weighted_sample_setter import WeightedSampleSetter
 
 import wandb
 from logger import Logger
 from rlgym1_assets.action_parsers.action_parsers import WandbActionParser, LookupAction
 from rlgym1_assets.rewards.rewards import LoggerCombinedReward, FlipResetReward
-from rlgym1_assets.state_mutators.state_mutators import DefaultState, ShotState, DynamicScoredReplaySetter
+from rlgym1_assets.state_mutators.state_mutators import DefaultState, ShotState, DynamicScoredReplaySetter, \
+    TeamSizeSetter
 from rlgym1_assets.terminal_conditions.multi_condition import MultiLoggedCondition
 from rlgym1_assets.wandb_loggers.ball_loggers import get_all_ball_loggers
 from rlgym1_assets.wandb_loggers.global_loggers import get_all_global_loggers
@@ -21,8 +23,8 @@ from rlgym1_assets.wandb_loggers.player_loggers import get_all_player_loggers
 TICK_RATE = 1. / 120.
 tick_skip = 8
 
-n_proc = 10
-ts_per_iteration = 100_000
+n_proc = 1
+ts_per_iteration = 10_000
 timestep_limit = ts_per_iteration * 10_000
 ppo_batch_size = ts_per_iteration // 2
 n_epochs = 10
@@ -42,7 +44,7 @@ logger = Logger(
     )
 
 action_parser = WandbActionParser(LookupAction())
-obs_builder = AdvancedObs()
+obs_builder = AdvancedObsPadder()
 reward_fn = LoggerCombinedReward(
     EventReward(
         goal=1,
@@ -85,13 +87,14 @@ def create_env():
     with open("tmp/replay_setter", "rb") as f:
         dynamic_replay_setter = pickle.load(f)
 
-    state_mutator = WeightedSampleSetter(
-        state_setters=(
+    state_mutator = TeamSizeSetter(
+        gm_probs=(1., 2., 1.),
+        setters=(
             DefaultState(),
             ShotState(),
             dynamic_replay_setter,
         ),
-        weights=(1, 1, 1)
+        weights=(1., 1., 1.)
     )
 
     rlgym_env = rlgym_sim.make(
@@ -155,7 +158,7 @@ if __name__ == "__main__":
         min_inference_size=min_inference_size,
         metrics_logger=logger,
 
-        log_to_wandb=True,
+        log_to_wandb=False,
         wandb_run_name=config['name'],
         wandb_group_name=config['entity'],
         wandb_project_name=config['project'],
