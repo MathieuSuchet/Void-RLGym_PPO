@@ -40,7 +40,7 @@ class LoggerCombinedReward(RewardFunction):
         if len(self.reward_logs) == 0:
             return
 
-        self.reward_logs = np.mean(self.reward_logs, axis=0)
+        self.reward_logs = np.sum(self.reward_logs, axis=0)
         data = {"Rewards": {}}
         for i, reward_fn in enumerate(self.reward_fns):
             data["Rewards"].setdefault(reward_fn.__class__.__name__, {
@@ -65,6 +65,8 @@ class LoggerCombinedReward(RewardFunction):
             func.get_final_reward(player, state, previous_action)
             for func in self.reward_fns
         ]
+
+        self.reward_logs.append(rewards)
 
         return float(np.dot(self.weights, rewards))
 

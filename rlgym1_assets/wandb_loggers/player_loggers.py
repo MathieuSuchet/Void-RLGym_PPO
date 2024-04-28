@@ -146,7 +146,7 @@ class PlayerFlipTimeLogger(WandbMetricsLogger):
         self.time_between_jump_and_flip.clear()
 
         metrics = metrics[np.nonzero(metrics)]
-        return np.mean(metrics)
+        return np.mean(metrics) if metrics.size > 0 else 0
 
 
 class PlayerWallTimeLogger(WandbMetricsLogger):
@@ -365,7 +365,9 @@ class PlayerDistanceToOthersLogger(WandbMetricsLogger):
                 dta.append(dist_to_other)
             dtall.append(dist_to_other)
 
-        return np.mean(dta), np.mean(dto), np.mean(dtall)
+        return (np.mean(dta) if len(dta) > 0 else 0,
+                np.mean(dto) if len(dto) > 0 else 0,
+                np.mean(dtall) if len(dtall) > 0 else 0)
 
     def _collect_metrics(self, game_state: GameState) -> np.ndarray:
         n_cars = len(game_state.players)
@@ -380,7 +382,9 @@ class PlayerDistanceToOthersLogger(WandbMetricsLogger):
         dist_to_opp = dist_to_opp[np.nonzero(dist_to_opp)]
         dist_to_all = dist_to_all[np.nonzero(dist_to_all)]
 
-        return np.array([np.mean(dist_to_allies), np.mean(dist_to_opp), np.mean(dist_to_all)])
+        return np.array([np.mean(dist_to_allies) if dist_to_allies.size > 0 else 0,
+                         np.mean(dist_to_opp) if dist_to_opp.size > 0 else 0,
+                         np.mean(dist_to_all) if dist_to_all.size > 0 else 0])
 
 
 class PlayerSupersonicTimeLogger(WandbMetricsLogger):
