@@ -56,7 +56,7 @@ class LoggerCombinedReward(RewardFunction):
             for func in self.reward_fns
         ]
 
-        self.reward_logs.append(rewards)
+        self.reward_logs.append([rew * w for rew, w in zip(rewards, self.weights)])
 
         return float(np.dot(self.weights, rewards))
 
@@ -66,7 +66,7 @@ class LoggerCombinedReward(RewardFunction):
             for func in self.reward_fns
         ]
 
-        self.reward_logs.append(rewards)
+        self.reward_logs.append([rew * w for rew, w in zip(rewards, self.weights)])
 
         return float(np.dot(self.weights, rewards))
 
