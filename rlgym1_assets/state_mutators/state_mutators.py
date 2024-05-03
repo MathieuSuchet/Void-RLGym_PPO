@@ -1303,22 +1303,6 @@ class DynamicScoredReplaySetter(ReplaySetter):
         self.generate_probabilities()
         super(DynamicScoredReplaySetter, self).reset(state_wrapper)
 
-    def _set_cars(self, state_wrapper: StateWrapper, data: np.ndarray):
-        """
-        Sets the players according to the game state from replay
-
-        :param state_wrapper: StateWrapper object to be modified with desired state values.
-        :param data: Numpy array from the replay to get values from.
-        """
-
-        data = np.split(data[9:], len(state_wrapper.cars))
-        for i, car in enumerate(state_wrapper.cars):
-            car.set_pos(*data[i][1:4])
-            car.set_rot(*data[i][4:7])
-            car.set_lin_vel(*data[i][7:10])
-            car.set_ang_vel(*data[i][10:13])
-            car.boost = data[i][13]
-
 class RecoverySetter(StateSetter):
     def __init__(self, zero_boost_weight=0, zero_ball_vel_weight=0, ball_vel_mult=1, ball_zero_z=False):
         self.ball_zero_z = ball_zero_z
