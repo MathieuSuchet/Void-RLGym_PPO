@@ -1,10 +1,10 @@
 from rlgym import make
 from rlgym.gamelaunch import LaunchPreference
 from rlgym_ppo.ppo import PPOLearner
-from rlgym_sim.utils.obs_builders import AdvancedObs
+from rlgym_tools.extra_obs.advanced_padder import AdvancedObsPadder
 from rlgym_sim.utils.reward_functions.common_rewards import VelocityBallToGoalReward, EventReward, \
-    LiuDistancePlayerToBallReward, FaceBallReward
-from rlgym_sim.utils.terminal_conditions.common_conditions import TimeoutCondition, BallTouchedCondition
+    LiuDistancePlayerToBallReward, FaceBallReward, ConstantReward
+from rlgym_sim.utils.terminal_conditions.common_conditions import TimeoutCondition, GoalScoredCondition, BallTouchedCondition
 
 from rlgym1_assets.action_parsers.action_parsers import WandbActionParser, LookupAction
 from rlgym1_assets.rewards.rewards import LoggerCombinedReward
@@ -12,13 +12,14 @@ from rlgym1_assets.state_mutators.state_mutators import DefaultState, ShotState,
     DynamicScoredReplaySetter
 from rlgym1_assets.terminal_conditions.multi_condition import MultiLoggedCondition
 
-TICK_RATE = 1. / 120.
 tick_skip = 8
+STEP_TIME = tick_skip / 120.
+
 
 
 spawn_opponents = True
-blue_count = 2
-orange_count = 2 if spawn_opponents else False
+blue_count = 3
+orange_count = 3 if spawn_opponents else False
 
 dynamic_replay = DynamicScoredReplaySetter(
                 "replays/states_scores_duels.npz",
@@ -29,45 +30,23 @@ dynamic_replay.load_replays()
 state_mutator = TeamSizeSetter(
     setters=(
         DefaultState(),
-        ShotState(),
         dynamic_replay
     ),
     weights=(1, 1),
-    gm_probs=(1, 1, 1)
+    gm_probs=(0.3, 0.4, 0.3)
 )
 action_parser = WandbActionParser(LookupAction())
-obs_builder = AdvancedObs()
-reward_fn = LoggerCombinedReward(
-    EventReward(
-        goal=1,
-        concede=-1,
-        touch=.01,
-        shot=.1,
-        save=.1
-    ),
-    (
-        VelocityBallToGoalReward(),
-        .1
-    ),
-    (
-        LiuDistancePlayerToBallReward(),
-        .1
-    ),
-    (
-        FaceBallReward(),
-        .1
-    )
-)
+obs_builder = AdvancedObsPadder()
+reward_fn = LoggerCombinedReward(ConstantReward())
 
 total_timeout = 2
 termination_conditions = [MultiLoggedCondition(
-    # GoalCondition(),
-    TimeoutCondition(int(total_timeout / TICK_RATE)),
-    BallTouchedCondition()
+    GoalScoredCondition(),
+    TimeoutCondition(int(total_timeout / STEP_TIME)),
 )]
 deterministic = False
 
-model_to_load = "data/rl_model/-1712845896901723900/28001784"
+model_to_load = "data/rl_model/-1714578008627305700/152007804"
 
 
 def create_env():
@@ -81,7 +60,7 @@ def create_env():
         team_size=blue_count,
         spawn_opponents=spawn_opponents,
         game_speed=1,
-        launch_preference=LaunchPreference.STEAM
+        launch_preference=LaunchPreference.EPIC
     )
 
     return rlgym_env
@@ -90,7 +69,7 @@ def create_env():
 if __name__ == "__main__":
 
     agent = PPOLearner(
-            obs_space_size=172,
+            obs_space_size=237,
             act_space_size=action_parser.get_action_space().n,
             device="cuda",
             batch_size=10_000,

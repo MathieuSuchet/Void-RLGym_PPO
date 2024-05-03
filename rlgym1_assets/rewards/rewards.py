@@ -9,8 +9,8 @@ from rlgym_sim.utils.gamestates import PlayerData, GameState
 from rlgym_sim.utils.reward_functions.common_rewards import VelocityPlayerToBallReward
 
 from logger import _add, Logger
-from rlgym1_assets.wandb_loggers.global_loggers import FlipResetLogger
-from rlgym1_assets.wandb_loggers.player_loggers import TouchForceLogger, PlayerSupersonicTimeLogger
+from rlgym_ppo_loggers.global_loggers import FlipResetLogger
+from rlgym_ppo_loggers.player_loggers import TouchForceLogger, PlayerSupersonicTimeLogger
 
 
 class LoggerCombinedReward(RewardFunction):
