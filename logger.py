@@ -8,7 +8,7 @@ from rlgym_ppo.util import MetricsLogger
 from rlgym_sim.utils.gamestates import GameState
 from wandb.sdk.wandb_run import Run
 
-from rlgym_ppo_loggers.global_loggers import WandbMetricsLogger
+from rlgym1_assets.wandb_loggers.global_loggers import WandbMetricsLogger
 
 
 def _add(x: Any, y: Any):
