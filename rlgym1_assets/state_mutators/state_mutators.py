@@ -1247,66 +1247,61 @@ class DynamicScoredReplaySetter(ReplaySetter):
         self.loaded = False
 
     def load_replays(self):
-        # print("Loading 1s replays...")
-        # data1s = np.load(self.ones_file, mmap_mode="r")
-        # print("Loading 2s replays...")
-        # data2s = np.load(self.twos_file, mmap_mode="r")
-        # print("Loading 3s replays...")
-        # data3s = np.load(self.threes_file, mmap_mode="r")
-        # print("Loading done")
-        #
-        # mask = ~np.isnan(data1s["states"]).any(axis=1) & ~np.isnan(data1s["scores"])
-        # self.states1s = data1s["states"][mask]
-        # self.scores1s = data1s["scores"][mask]
-        # self.scores = self.scores1s
-        # self.probs1s = self.generate_probabilities()
-        #
-        # mask = ~np.isnan(data2s["states"]).any(axis=1) & ~np.isnan(data2s["scores"])
-        # self.states2s = data2s["states"][mask]
-        # self.scores2s = data2s["scores"][mask]
-        # self.scores = self.scores2s
-        # self.probs2s = self.generate_probabilities()
-        #
-        # mask = ~np.isnan(data3s["states"]).any(axis=1) & ~np.isnan(data3s["scores"])
-        # self.states3s = data3s["states"][mask]
-        # self.scores3s = data3s["scores"][mask]
-        # self.scores = self.scores3s
-        # self.probs3s = self.generate_probabilities()
+        print("Loading 1s replays...")
+        data1s = np.load(self.ones_file, mmap_mode="r")
+        print("Loading 2s replays...")
+        data2s = np.load(self.twos_file, mmap_mode="r")
+        print("Loading 3s replays...")
+        data3s = np.load(self.threes_file, mmap_mode="r")
+        print("Loading done")
 
-        # self.scores = self.scores1s
-        temp_states = np.load("replays/states_wall.npy")
-        self.states = np.array([pickle.loads(temp_states[i]) for i in range(temp_states.shape[0])])
-        self.probabilities = self.generate_probabilities()
+        mask = ~np.isnan(data1s["states"]).any(axis=1) & ~np.isnan(data1s["scores"])
+        self.states1s = data1s["states"][mask]
+        self.scores1s = data1s["scores"][mask]
+        self.scores = self.scores1s
+        self.probs1s = self.generate_probabilities()
 
+        mask = ~np.isnan(data2s["states"]).any(axis=1) & ~np.isnan(data2s["scores"])
+        self.states2s = data2s["states"][mask]
+        self.scores2s = data2s["scores"][mask]
+        self.scores = self.scores2s
+        self.probs2s = self.generate_probabilities()
+
+        mask = ~np.isnan(data3s["states"]).any(axis=1) & ~np.isnan(data3s["scores"])
+        self.states3s = data3s["states"][mask]
+        self.scores3s = data3s["scores"][mask]
+        self.scores = self.scores3s
+        self.probs3s = self.generate_probabilities()
+
+        self.scores = self.scores1s
         self.loaded = True
 
     def generate_probabilities(self):
-        if not self.loaded:
-            return [1, 0]
-        return super().generate_probabilities()
+        if not isinstance(self.scores, type(None)):
+            scores = np.vectorize(probs_function)(self.scores)
+            probs = scores / scores.sum()
+            return probs
+        return [1, 0]
 
     def reset(self, state_wrapper: StateWrapper):
-        # if len(state_wrapper.cars) == 6:
-        #     self.states = self.states3s
-        #     self.scores = self.scores3s
-        #     self.probabilities = self.probs3s
-        # elif len(state_wrapper.cars) == 4:
-        #     self.states = self.states2s
-        #     self.scores = self.scores2s
-        #     self.probabilities = self.probs2s
-        # else:
-        #     self.states = self.states1s
-        #     self.scores = self.scores1s
-        #     self.probabilities = self.probs1s
+        if len(state_wrapper.cars) == 6:
+            self.states = self.states3s
+            self.scores = self.scores3s
+            self.probabilities = self.probs3s
+        elif len(state_wrapper.cars) == 4:
+            self.states = self.states2s
+            self.scores = self.scores2s
+            self.probabilities = self.probs2s
+        else:
+            self.states = self.states1s
+            self.scores = self.scores1s
+            self.probabilities = self.probs1s
 
         if not self.loaded:
-            self.states = np.array([[0.] * 9 + ([0.] * 14) * len(state_wrapper.cars)] * 2)
+            self.states = np.array([[0.] * 9 + ([0.] * 13) * len(state_wrapper.cars)] * 2)
 
-        self.probabilities = self.generate_probabilities()
-        data = self.states[np.random.choice(len(self.states), p=self.probabilities)]
-        assert len(data) == len(state_wrapper.cars) * 14 + 9 , "Data given does not match current game mode"
-        self._set_ball(state_wrapper, data)
-        self._set_cars(state_wrapper, data)
+        self.generate_probabilities()
+        super(DynamicScoredReplaySetter, self).reset(state_wrapper)
 
     def _set_cars(self, state_wrapper: StateWrapper, data: np.ndarray):
         """
