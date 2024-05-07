@@ -2,24 +2,26 @@ import pickle
 
 import rlgym_sim
 from rlgym_ppo import Learner
+from rlgym_ppo_loggers.global_loggers import TouchLogger
+from rlgym_ppo_loggers.player_loggers import PlayerRelDistToBallLogger
+from rlgym_rcf.replay_converter.converter_to_env import RCFSetterSim
 from rlgym_sim.utils.reward_functions.common_rewards import EventReward
-from rlgym_sim.utils.terminal_conditions.common_conditions import TimeoutCondition, GoalScoredCondition
+from rlgym_sim.utils.terminal_conditions.common_conditions import TimeoutCondition, GoalScoredCondition, \
+    NoTouchTimeoutCondition
 from rlgym_tools.extra_obs.advanced_padder import AdvancedObsPadder
 
 import wandb
 from logger import Logger
 from rlgym1_assets.action_parsers.action_parsers import WandbActionParser, LookupAction
-from rlgym1_assets.rewards.NewRewards import PlayerVelocityReward, KickoffReward_MMR, DribbleReward
-from rlgym1_assets.rewards.rewards import LoggerCombinedReward, BumpReward, GoalScoreSpeed, \
-    SaveBoostReward, BoostPickupReward
+from rlgym1_assets.rewards.NewRewards import BumpReward, PlayerVelocityReward, GoalScoreSpeed, KickoffReward_MMR, \
+    SaveBoostReward, BoostPickupReward, DribbleReward
+from rlgym1_assets.rewards.rewards import LoggerCombinedReward
 from rlgym1_assets.state_mutators.state_mutators import DefaultState, DynamicScoredReplaySetter, \
-    TeamSizeSetter
+    TeamSizeSetter, ShotState
 from rlgym1_assets.terminal_conditions.multi_condition import MultiLoggedCondition
-
 
 tick_skip = 8
 STEP_TIME = tick_skip / 120.
-
 
 n_proc = 55
 ts_per_iteration = 1_000_000
@@ -36,6 +38,8 @@ blue_count = 3
 orange_count = 3 if spawn_opponents else 0
 
 logger = Logger(
+    PlayerRelDistToBallLogger(),
+    TouchLogger()
     # *get_all_global_loggers(),
     # *get_all_ball_loggers(),
     # *get_all_player_loggers()
@@ -44,60 +48,60 @@ logger = Logger(
 action_parser = WandbActionParser(LookupAction())
 obs_builder = AdvancedObsPadder()
 reward_fn = LoggerCombinedReward(
-    EventReward(
+    (EventReward(
         goal=1,
         team_goal=1.2,
         concede=-1,
-        touch=0.5,
+        touch=0.75,
         shot=0.6,
         save=0.7,
         demo=0.8,
         boost_pickup=0.5
-    ),
-    (BumpReward(), 0.001),
-    (PlayerVelocityReward(), 0.001),
+    ),0.5),
+    (BumpReward(), 0.01),
+    (PlayerVelocityReward(), 0.0007),
     (GoalScoreSpeed(), 30),
-    (KickoffReward_MMR(), 30),
-    (SaveBoostReward(), 5),
-    (BoostPickupReward(), 100),
-    (DribbleReward(), 0.03)
+    (KickoffReward_MMR(), 20),
+    (SaveBoostReward(), 0.0005),
+    (BoostPickupReward(), 0.01),
+    (DribbleReward(), 0.01)
 )
 
-total_timeout = 2
+total_timeout = 30
 termination_conditions = [MultiLoggedCondition(
     GoalScoredCondition(),
     TimeoutCondition(int(total_timeout / STEP_TIME)),
 )]
-
 rendered = False
-continue_run = False  # If you did a run already, and you are continuing (make sure to give the run's id)
-
+continue_run = True  # If you did a run already, and you are continuing (make sure to give the run's id)
 
 def create_env():
     with open("tmp/replay_setter", "rb") as f:
         dynamic_replay_setter = pickle.load(f)
 
-    state_mutator = TeamSizeSetter(
+    with open("tmp/converter_to_env", "rb") as f:
+        rcf_setter = pickle.load(f)
+
+    state_setter = TeamSizeSetter(
         gm_probs=(0.3, 0.4, 0.4),
         setters=(
             DefaultState(),
-            dynamic_replay_setter
+            ShotState()
         ),
         weights=(1, 1)
     )
 
-    rlgym_env = rlgym_sim.make(
-        state_setter=state_mutator,
-        action_parser=action_parser,
-        obs_builder=obs_builder,
-        reward_fn=reward_fn,
-        terminal_conditions=termination_conditions,
+    return rlgym_sim.make(
         tick_skip=tick_skip,
         team_size=blue_count,
         spawn_opponents=spawn_opponents,
-    )
 
-    return rlgym_env
+        reward_fn=reward_fn,
+        state_setter=state_setter,
+        obs_builder=obs_builder,
+        action_parser=action_parser,
+        terminal_conditions=termination_conditions
+    )
 
 
 if __name__ == "__main__":
@@ -108,8 +112,13 @@ if __name__ == "__main__":
         "replays/states_scores_standard.npz"
     )
 
+    rcf_setter = RCFSetterSim(["replays/states_wall.npy"])
+
     with open("tmp/replay_setter", "wb") as f:
         pickle.dump(dynamic_replay_setter, f)
+
+    with open("tmp/converter_to_env", "wb") as f:
+        pickle.dump(rcf_setter, f)
 
     config = {
         "project": "Void",
@@ -118,7 +127,7 @@ if __name__ == "__main__":
     }
 
     if continue_run:
-        run_id = "rck3n25q"
+        run_id = "q6mlkyhe"
         wandb_run = wandb.init(
             entity=config["entity"],
             name=config["name"],
@@ -160,6 +169,7 @@ if __name__ == "__main__":
         device="cuda"
     )
 
-    dynamic_replay_setter.load_replays()
+    # dynamic_replay_setter.load_replays()
+    # rcf_setter.load()
 
     agent.learn()

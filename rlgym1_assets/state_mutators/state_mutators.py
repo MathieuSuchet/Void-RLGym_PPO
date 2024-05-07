@@ -1,20 +1,21 @@
 import math
-import pickle
 import random
 from collections import namedtuple
-from typing import Tuple, List
+from typing import Tuple, Sequence, Union
 
 import numpy as np
+from rlgym_sim.utils import RewardFunction
 from rlgym_sim.utils.common_values import CAR_MAX_SPEED, SIDE_WALL_X, BACK_WALL_Y, CEILING_Z, BALL_RADIUS, \
     CAR_MAX_ANG_VEL, \
     BALL_MAX_SPEED, BLUE_TEAM, ORANGE_TEAM, BOOST_LOCATIONS
-from rlgym_sim.utils.gamestates import PhysicsObject, GameState
+from rlgym_sim.utils.gamestates import PhysicsObject
 from rlgym_sim.utils.math import rand_vec3
 from rlgym_sim.utils.state_setters import StateSetter
 from rlgym_sim.utils.state_setters import StateWrapper
 from rlgym_sim.utils.state_setters.wrappers import CarWrapper
 from rlgym_tools.extra_state_setters.replay_setter import ReplaySetter
-from rlgym_tools.extra_state_setters.weighted_sample_setter import WeightedSampleSetter
+
+from logger import Logger
 
 LIM_X = SIDE_WALL_X - 1152 / 2 - BALL_RADIUS * 2 ** 0.5
 LIM_Y = BACK_WALL_Y - 1152 / 2 - BALL_RADIUS * 2 ** 0.5
@@ -1303,6 +1304,7 @@ class DynamicScoredReplaySetter(ReplaySetter):
         self.generate_probabilities()
         super(DynamicScoredReplaySetter, self).reset(state_wrapper)
 
+
 class RecoverySetter(StateSetter):
     def __init__(self, zero_boost_weight=0, zero_ball_vel_weight=0, ball_vel_mult=1, ball_zero_z=False):
         self.ball_zero_z = ball_zero_z
@@ -1790,12 +1792,64 @@ class ProbabilisticStateSetter(StateSetter):
         selected_state.reset(state_wrapper)
 
 
+class WandbWeightedSampleSetter(StateSetter):
+    """
+    Samples StateSetters randomly according to their weights.
+
+    :param state_setters: 1-D array-like of state-setters to be sampled from
+    :param weights: 1-D array-like of the weights associated with each entry in state_setters
+    """
+
+    def __init__(self, state_setters: Sequence[StateSetter], weights: Sequence[float]):
+        super().__init__()
+        self.logger = Logger()
+        self.state_setters = state_setters
+        self.weights = weights
+        assert len(state_setters) == len(weights), \
+            f"Length of state_setters should match the length of weights, " \
+            f"instead lengths {len(state_setters)} and {len(weights)} were given respectively."
+
+    @classmethod
+    def from_zipped(
+            cls,
+            *setters_and_weights: Union[StateSetter, Tuple[RewardFunction, float]]
+    ) -> "WandbWeightedSampleSetter":
+        """
+        Alternate constructor which takes any number of either rewards, or (reward, weight) tuples.
+        :param setters_and_weights: a sequence of RewardFunction or (RewardFunction, weight) tuples
+        """
+        rewards = []
+        weights = []
+        for value in setters_and_weights:
+            if isinstance(value, tuple):
+                r, w = value
+            else:
+                r, w = value, 1.
+            rewards.append(r)
+            weights.append(w)
+        return cls(tuple(rewards), tuple(weights))
+
+    def reset(self, state_wrapper: StateWrapper):
+        """
+        Executes the reset of randomly sampled state-setter
+
+        :param state_wrapper: StateWrapper object to be modified with desired state values.
+        """
+        chosen_setter = random.choices(self.state_setters, weights=self.weights)[0]
+        self.logger.add_result({
+            "State Setters": {
+                chosen_setter.__class__.__name__: 1
+            }
+        })
+        chosen_setter.reset(state_wrapper)
+
+
 class TeamSizeSetter(StateSetter):
     def __init__(self, gm_probs: Tuple[float, float, float], setters: Tuple[StateSetter, ...],
                  weights: Tuple[float, ...]):
         super().__init__()
         self.gm_probs = gm_probs
-        self.state = WeightedSampleSetter(state_setters=setters, weights=weights)
+        self.state = WandbWeightedSampleSetter(state_setters=setters, weights=weights)
         self.count = 3
 
     def build_wrapper(self, max_team_size: int, spawn_opponents: bool) -> StateWrapper:

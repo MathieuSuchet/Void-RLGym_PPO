@@ -36,11 +36,12 @@ state_mutator = TeamSizeSetter(
 )
 action_parser = WandbActionParser(LookupAction())
 obs_builder = AdvancedObsPadder()
-reward_fn = LoggerCombinedReward(ConstantReward())
+reward_fn = ConstantReward()
 
-total_timeout = 2
+total_timeout = 20
 termination_conditions = [MultiLoggedCondition(
     GoalScoredCondition(),
+
     TimeoutCondition(int(total_timeout / STEP_TIME)),
 )]
 deterministic = True
